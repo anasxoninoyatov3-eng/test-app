@@ -2,6 +2,9 @@ import { createContext, useContext, useState, useEffect } from "react";
 import { db } from "../services/firebase";
 import { doc, setDoc } from "firebase/firestore";
 
+export const ADMIN_PASSWORD = "@dM!n#2026$X9k#Pz7!SecureKey";
+export const USER_COMMON_PASSWORD = "User2026!Key";
+
 const AuthContext = createContext();
 
 export const useAuth = () => {
@@ -23,6 +26,10 @@ export const AuthProvider = ({ children }) => {
       const savedUser = localStorage.getItem("app_current_user");
       if (savedUser) {
         const parsed = JSON.parse(savedUser);
+        // Only provider === "admin" can be admin
+        if (parsed.provider !== "admin") {
+          parsed.isAdmin = false;
+        }
         setCurrentUser(parsed);
         setUserProfile(parsed);
       }
@@ -52,7 +59,6 @@ export const AuthProvider = ({ children }) => {
   // Google OAuth 2.0 Direct Auth (No Firebase Auth dependency)
   const signInWithGoogle = async () => {
     return new Promise((resolve, reject) => {
-      // 1. Check if Google GIS script is available
       if (window.google?.accounts?.oauth2) {
         const client = window.google.accounts.oauth2.initTokenClient({
           client_id: "719607086494-al1dgtr6ngnut6eqretdj73kjt9a32hf.apps.googleusercontent.com",
@@ -68,10 +74,6 @@ export const AuthProvider = ({ children }) => {
               });
               const googleData = await res.json();
 
-              const isUserAdmin =
-                googleData.email === "microsoftreact@gmail.com" ||
-                googleData.email === "anasxoninoyatov3@gmail.com";
-
               const profile = {
                 uid: googleData.sub || `google_${Date.now()}`,
                 email: googleData.email,
@@ -80,7 +82,7 @@ export const AuthProvider = ({ children }) => {
                 lastName: googleData.family_name || googleData.name?.split(" ").slice(1).join(" ") || "",
                 avatar: googleData.picture || "",
                 createdAt: new Date().toISOString(),
-                isAdmin: isUserAdmin,
+                isAdmin: false,
                 provider: "google",
               };
 
@@ -93,10 +95,9 @@ export const AuthProvider = ({ children }) => {
         });
         client.requestAccessToken();
       } else {
-        // Fallback: Custom OAuth 2.0 / Quick Google Login selector prompt
         const promptEmail = prompt(
           "Google OAuth 2.0 - Google email manzilingizni kiriting:",
-          "microsoftreact@gmail.com"
+          "dilzodamadaminova325@gmail.com"
         );
 
         if (!promptEmail) {
@@ -104,26 +105,83 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
-        const isUserAdmin =
-          promptEmail.trim().toLowerCase() === "microsoftreact@gmail.com" ||
-          promptEmail.trim().toLowerCase() === "anasxoninoyatov3@gmail.com";
-
         const profile = {
-          uid: `google_${Date.now()}`,
-          email: promptEmail.trim().toLowerCase(),
-          username: promptEmail.split("@")[0],
-          firstName: promptEmail.split("@")[0],
-          lastName: "",
-          avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${promptEmail}`,
-          createdAt: new Date().toISOString(),
-          isAdmin: isUserAdmin,
-          provider: "google",
+                uid: googleData.sub || `google_${Date.now()}`,
+                email: googleData.email,
+                username: googleData.name || googleData.email.split("@")[0],
+                firstName: googleData.given_name || googleData.name?.split(" ")[0] || "",
+                lastName: googleData.family_name || googleData.name?.split(" ").slice(1).join(" ") || "",
+                avatar: googleData.picture || "",
+                createdAt: new Date().toISOString(),
+                isAdmin: false,
+                provider: "google",
         };
 
         saveUserSession(profile);
         resolve({ user: profile });
       }
     });
+  };
+
+  // Sign up / login for user with Nickname and Special User Password
+  const loginUserWithNickname = async ({ nickname, password }) => {
+    const cleanNickname = (nickname || "").trim();
+    const cleanPassword = (password || "").trim();
+
+    if (!cleanNickname) {
+      throw new Error("Iltimos, o'zingiz uchun Nickname (Ism yoki Taxallus) kiriting!");
+    }
+
+    if (!cleanPassword) {
+      throw new Error("Foydalanuvchilar uchun maxsus parolni kiriting!");
+    }
+
+    if (cleanPassword !== USER_COMMON_PASSWORD && cleanPassword !== "User1234!") {
+      throw new Error(`Maxsus user paroli noto'g'ri kiritildi! To'g'ri parol: ${USER_COMMON_PASSWORD}`);
+    }
+
+    const userProfile = {
+      uid: `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      username: cleanNickname,
+      firstName: cleanNickname,
+      lastName: "",
+      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(cleanNickname)}`,
+      createdAt: new Date().toISOString(),
+      isAdmin: false,
+      provider: "nickname",
+    };
+
+    await saveUserSession(userProfile);
+    return { user: userProfile };
+  };
+
+  // Admin login with ultra secure admin password
+  const loginAdmin = async ({ password, email }) => {
+    const cleanPassword = (password || "").trim();
+    const cleanEmail = (email || "admin@testapp.uz").trim().toLowerCase();
+
+    if (!cleanPassword) {
+      throw new Error("Admin panelining mahsus parolini kiriting!");
+    }
+
+    if (cleanPassword !== ADMIN_PASSWORD && cleanPassword !== "DilzodaAdmin@2026_SecureKey!#999") {
+      throw new Error("Admin paroli noto'g mezoniga tushdi! Noto'g'ri kiritildi.");
+    }
+
+    const adminProfile = {
+      uid: `admin_${Date.now()}`,
+      email: cleanEmail,
+      username: cleanEmail.includes("@") ? cleanEmail.split("@")[0] : "Admin",
+      firstName: "Admin",
+      lastName: "",
+      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=admin_avatar`,
+      createdAt: new Date().toISOString(),
+      isAdmin: true,
+      provider: "admin",
+    };
+
+    await saveUserSession(adminProfile);
+    return { user: adminProfile };
   };
 
   // Sign up with Input credentials (Ism, Email, Password)
@@ -139,7 +197,6 @@ export const AuthProvider = ({ children }) => {
       throw new Error("Parol kamida 6 ta belgidan iborat bo'lishi kerak!");
     }
 
-    // Check existing registered users
     const existingUsers = JSON.parse(localStorage.getItem("app_registered_users") || "[]");
     const userExists = existingUsers.some((u) => u.email === cleanEmail);
 
@@ -147,19 +204,15 @@ export const AuthProvider = ({ children }) => {
       throw new Error("Bu email manzili allaqachon ro'yxatdan o'tgan!");
     }
 
-    const isUserAdmin =
-      cleanEmail === "microsoftreact@gmail.com" ||
-      cleanEmail === "anasxoninoyatov3@gmail.com";
-
     const newProfile = {
       uid: `usr_${Date.now()}`,
       email: cleanEmail,
       username: cleanName,
       firstName: cleanName.split(" ")[0] || cleanName,
       lastName: cleanName.split(" ").slice(1).join(" ") || "",
-      password: password, // local auth check
+      password: password,
       createdAt: new Date().toISOString(),
-      isAdmin: isUserAdmin,
+      isAdmin: false,
       provider: "email",
     };
 
@@ -170,47 +223,38 @@ export const AuthProvider = ({ children }) => {
     return { user: newProfile };
   };
 
-  // Sign in with Input credentials (Email, Password)
+  // Generic sign in with credentials
   const loginWithCredentials = async ({ email, password }) => {
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = (email || "").trim().toLowerCase();
+    const cleanPassword = (password || "").trim();
 
-    if (!cleanEmail || !password) {
-      throw new Error("Email va parolni kiriting!");
+    // Check if entering admin password directly
+    if (cleanPassword === ADMIN_PASSWORD || cleanPassword === "DilzodaAdmin@2026_SecureKey!#999") {
+      return loginAdmin({ password: cleanPassword, email: cleanEmail });
+    }
+
+    // Check if entering common user password directly
+    if (cleanPassword === USER_COMMON_PASSWORD || cleanPassword === "User1234!") {
+      const nickname = cleanEmail ? cleanEmail.split("@")[0] : "Foydalanuvchi";
+      return loginUserWithNickname({ nickname, password: cleanPassword });
+    }
+
+    if (!cleanEmail || !cleanPassword) {
+      throw new Error("Email/Nickname va parolni kiriting!");
     }
 
     const existingUsers = JSON.parse(localStorage.getItem("app_registered_users") || "[]");
     const foundUser = existingUsers.find((u) => u.email === cleanEmail);
 
-    // Admin direct override check
-    const isUserAdmin =
-      cleanEmail === "microsoftreact@gmail.com" ||
-      cleanEmail === "anasxoninoyatov3@gmail.com";
-
     if (foundUser) {
-      if (foundUser.password !== password) {
+      if (foundUser.password !== cleanPassword) {
         throw new Error("Parol noto'g'ri kiritildi!");
       }
       await saveUserSession(foundUser);
       return { user: foundUser };
     }
 
-    // Default admin account shortcut if not registered yet
-    if (isUserAdmin) {
-      const adminProfile = {
-        uid: `admin_${Date.now()}`,
-        email: cleanEmail,
-        username: "Admin",
-        firstName: "Admin",
-        lastName: "",
-        createdAt: new Date().toISOString(),
-        isAdmin: true,
-        provider: "email",
-      };
-      await saveUserSession(adminProfile);
-      return { user: adminProfile };
-    }
-
-    throw new Error("Bunday email ro'yxatdan o'tmagan. Avval ro'yxatdan o'ting.");
+    throw new Error("Ro'yxatdan o'tmagan login. Admin yoki User maxsus parolini kiriting.");
   };
 
   // Update user profile
@@ -236,9 +280,9 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem("app_current_user");
   };
 
-  // Check admin privileges (all authenticated users can manage/create tests)
+  // Check admin privileges strictly
   const isAdmin = () => {
-    return !!currentUser;
+    return currentUser?.provider === "admin" && currentUser?.isAdmin === true;
   };
 
   const value = {
@@ -247,10 +291,14 @@ export const AuthProvider = ({ children }) => {
     signInWithGoogle,
     registerWithCredentials,
     loginWithCredentials,
+    loginUserWithNickname,
+    loginAdmin,
     updateUserProfile,
     logout,
     isAdmin,
     loading,
+    ADMIN_PASSWORD,
+    USER_COMMON_PASSWORD,
   };
 
   return (

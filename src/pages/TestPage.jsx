@@ -206,6 +206,15 @@ const TestPage = () => {
           </div>
 
           <div className="question-content">
+            {currentQuestion.imageUrl && (
+              <div className="question-image-wrapper" style={{ textAlign: "center", marginBottom: "1.5rem" }}>
+                <img
+                  src={currentQuestion.imageUrl}
+                  alt="Savol rasmi"
+                  style={{ maxWidth: "100%", maxHeight: "350px", borderRadius: "16px", border: "2px solid rgba(255, 255, 255, 0.15)", boxShadow: "0 8px 25px rgba(0, 0, 0, 0.3)", objectFit: "contain" }}
+                />
+              </div>
+            )}
             <p className="question-text">{currentQuestion.question}</p>
           </div>
 

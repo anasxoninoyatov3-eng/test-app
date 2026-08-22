@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import {
-  FaEnvelope,
   FaLock,
   FaUser,
   FaEye,
@@ -11,147 +10,95 @@ import {
   FaCheckCircle,
   FaExclamationCircle,
   FaTimes,
+  FaUserShield,
+  FaKey,
+  FaInfoCircle,
 } from "react-icons/fa";
 import "../styles/Auth.css";
 
-// Official 4-color Google Icon SVG
-const GoogleLogo = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" className="google-svg-logo">
-    <path
-      fill="#4285F4"
-      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
-    />
-    <path
-      fill="#34A853"
-      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.29v3.15C3.26 21.3 7.31 24 12 24z"
-    />
-    <path
-      fill="#FBBC05"
-      d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.29C.47 8.21 0 10.05 0 12s.47 3.79 1.29 5.42l3.99-3.15z"
-    />
-    <path
-      fill="#EA4335"
-      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.58l3.99 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
-    />
-  </svg>
-);
-
 const Auth = ({ onClose }) => {
   const navigate = useNavigate();
-  const { signInWithGoogle, registerWithCredentials, loginWithCredentials } =
+  const { loginUserWithNickname, loginAdmin, ADMIN_PASSWORD, USER_COMMON_PASSWORD } =
     useAuth();
 
-  const [activeTab, setActiveTab] = useState("login"); // 'login' | 'register'
+  const [activeTab, setActiveTab] = useState("user"); // 'user' | 'admin'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
   // Form states
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
+  const [userForm, setUserForm] = useState({
+    nickname: "",
     password: "",
-    confirmPassword: "",
   });
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    if (error) setError("");
-  };
+  const [adminForm, setAdminForm] = useState({
+    email: "admin@testapp.uz",
+    password: "",
+  });
 
-  const handleAuthSuccess = (user) => {
+  const handleAuthSuccess = (isUserAdmin) => {
     setSuccess("Muvaffaqiyatli amalga oshirildi!");
-    const isAdminUser =
-      user?.email === "anasxoninoyatov3@gmail.com"  ||
-      user?.isAdmin;
-
     setTimeout(() => {
       onClose();
-      if (isAdminUser) {
+      if (isUserAdmin) {
         navigate("/admin");
       } else {
         navigate("/test-selection");
       }
-    }, 1200);
+    }, 1000);
   };
 
-  // Google Login (OAuth 2.0 without Firebase Auth)
-  const handleGoogleLogin = async () => {
+  const handleUserSubmit = async (e) => {
+    e.preventDefault();
     setError("");
     setSuccess("");
+
+    if (!userForm.nickname.trim()) {
+      setError("Iltimos, Nickname (Taxallus) kiriting!");
+      return;
+    }
+    if (!userForm.password) {
+      setError("Foydalanuvchilar uchun maxsus parolni kiriting!");
+      return;
+    }
+
     setLoading(true);
     try {
-      const result = await signInWithGoogle();
-      handleAuthSuccess(result.user);
+      await loginUserWithNickname({
+        nickname: userForm.nickname,
+        password: userForm.password,
+      });
+      handleAuthSuccess(false);
     } catch (err) {
-      setError(err.message || "Google orqali kirishda xatolik yuz berdi");
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Submit Form (Input-based Auth)
-  const handleSubmit = async (e) => {
+  const handleAdminSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setSuccess("");
 
-    if (activeTab === "register") {
-      if (!formData.name.trim()) {
-        setError("Ismingizni kiriting!");
-        return;
-      }
-      if (!formData.email.trim()) {
-        setError("Email manzilingizni kiriting!");
-        return;
-      }
-      if (!formData.password) {
-        setError("Parol kiriting!");
-        return;
-      }
-      if (formData.password !== formData.confirmPassword) {
-        setError("Parollar bir-biriga mos kelmadi!");
-        return;
-      }
+    if (!adminForm.password) {
+      setError("Admin panelining shifrlangan maxsus parolini kiriting!");
+      return;
+    }
 
-      setLoading(true);
-      try {
-        const result = await registerWithCredentials({
-          name: formData.name,
-          email: formData.email,
-          password: formData.password,
-        });
-        handleAuthSuccess(result.user);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      // Login mode
-      if (!formData.email.trim()) {
-        setError("Email manzilingizni kiriting!");
-        return;
-      }
-      if (!formData.password) {
-        setError("Parolingizni kiriting!");
-        return;
-      }
-
-      setLoading(true);
-      try {
-        const result = await loginWithCredentials({
-          email: formData.email,
-          password: formData.password,
-        });
-        handleAuthSuccess(result.user);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
+    setLoading(true);
+    try {
+      await loginAdmin({
+        email: adminForm.email,
+        password: adminForm.password,
+      });
+      handleAuthSuccess(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -177,29 +124,27 @@ const Auth = ({ onClose }) => {
 
         {/* Modal Header with Clean Tabs */}
         <div className="auth-header">
-          <h2>
-            {activeTab === "login" ? "Tizimga kirish" : "Ro'yxatdan o'tish"}
-          </h2>
+          <h2>Tizimga kirish</h2>
           <div className="auth-tabs">
             <button
-              className={`auth-tab ${activeTab === "login" ? "active" : ""}`}
+              className={`auth-tab ${activeTab === "user" ? "active" : ""}`}
               onClick={() => {
-                setActiveTab("login");
+                setActiveTab("user");
                 setError("");
                 setSuccess("");
               }}
             >
-              Kirish
+              <FaUser style={{ marginRight: "6px" }} /> Foydalanuvchi
             </button>
             <button
-              className={`auth-tab ${activeTab === "register" ? "active" : ""}`}
+              className={`auth-tab ${activeTab === "admin" ? "active" : ""}`}
               onClick={() => {
-                setActiveTab("register");
+                setActiveTab("admin");
                 setError("");
                 setSuccess("");
               }}
             >
-              Ro'yxatdan o'tish
+              <FaUserShield style={{ marginRight: "6px" }} /> Admin Panel
             </button>
           </div>
         </div>
@@ -232,120 +177,124 @@ const Auth = ({ onClose }) => {
             )}
           </AnimatePresence>
 
-          {/* Form */}
-          <form className="auth-form" onSubmit={handleSubmit}>
-            {activeTab === "register" && (
+          {/* USER LOGIN FORM */}
+          {activeTab === "user" && (
+            <form className="auth-form" onSubmit={handleUserSubmit}>
               <div className="input-group">
-                <label>Ismingiz va familiyangiz</label>
+                <label>Sizning Nickname (Ism / Taxallus)</label>
                 <div className="input-wrapper">
                   <FaUser className="input-icon" />
                   <input
                     type="text"
-                    name="name"
-                    placeholder="Ism va familiya"
-                    value={formData.name}
-                    onChange={handleInputChange}
+                    placeholder="Masalan: Jasur, Madina, User1..."
+                    value={userForm.nickname}
+                    onChange={(e) =>
+                      setUserForm({ ...userForm, nickname: e.target.value })
+                    }
                     disabled={loading}
-                    autoComplete="name"
+                    autoComplete="username"
                   />
                 </div>
               </div>
-            )}
 
-            <div className="input-group">
-              <label>Email manzil</label>
-              <div className="input-wrapper">
-                <FaEnvelope className="input-icon" />
-                <input
-                  type="email"
-                  name="email"
-                  placeholder="misol@gmail.com"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  disabled={loading}
-                  autoComplete="email"
-                />
-              </div>
-            </div>
-
-            <div className="input-group">
-              <label>Parol</label>
-              <div className="input-wrapper">
-                <FaLock className="input-icon" />
-                <input
-                  type={showPassword ? "text" : "password"}
-                  name="password"
-                  placeholder="••••••••"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  disabled={loading}
-                  autoComplete={
-                    activeTab === "login" ? "current-password" : "new-password"
-                  }
-                />
-                <button
-                  type="button"
-                  className="eye-btn"
-                  onClick={() => setShowPassword(!showPassword)}
-                  tabIndex="-1"
-                >
-                  {showPassword ? <FaEyeSlash /> : <FaEye />}
-                </button>
-              </div>
-            </div>
-
-            {activeTab === "register" && (
               <div className="input-group">
-                <label>Parolni tasdiqlash</label>
+                <label>Foydalanuvchilar maxsus paroli</label>
+                <div className="input-wrapper">
+                  <FaKey className="input-icon" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Parolni kiriting..."
+                    value={userForm.password}
+                    onChange={(e) =>
+                      setUserForm({ ...userForm, password: e.target.value })
+                    }
+                    disabled={loading}
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    className="eye-btn"
+                    onClick={() => setShowPassword(!showPassword)}
+                    tabIndex="-1"
+                  >
+                    {showPassword ? <FaEyeSlash /> : <FaEye />}
+                  </button>
+                </div>
+              </div>
+
+
+
+              <motion.button
+                type="submit"
+                className="submit-btn"
+                disabled={loading}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                {loading ? <span className="spinner"></span> : "Test Yechishga Kirish"}
+              </motion.button>
+            </form>
+          )}
+
+          {/* ADMIN LOGIN FORM */}
+          {activeTab === "admin" && (
+            <form className="auth-form" onSubmit={handleAdminSubmit}>
+              <div className="input-group">
+                <label>Admin Login / Email</label>
+                <div className="input-wrapper">
+                  <FaUserShield className="input-icon" />
+                  <input
+                    type="text"
+                    placeholder="admin@testapp.uz"
+                    value={adminForm.email}
+                    onChange={(e) =>
+                      setAdminForm({ ...adminForm, email: e.target.value })
+                    }
+                    disabled={loading}
+                    autoComplete="username"
+                  />
+                </div>
+              </div>
+
+              <div className="input-group">
+                <label>Shifrlangan Qiyin Admin Paroli</label>
                 <div className="input-wrapper">
                   <FaLock className="input-icon" />
                   <input
                     type={showPassword ? "text" : "password"}
-                    name="confirmPassword"
-                    placeholder="••••••••"
-                    value={formData.confirmPassword}
-                    onChange={handleInputChange}
+                    placeholder="Parolni kiriting..."
+                    value={adminForm.password}
+                    onChange={(e) =>
+                      setAdminForm({ ...adminForm, password: e.target.value })
+                    }
                     disabled={loading}
-                    autoComplete="new-password"
+                    autoComplete="current-password"
                   />
+                  <button
+                    type="button"
+                    className="eye-btn"
+                    onClick={() => setShowPassword(!showPassword)}
+                    tabIndex="-1"
+                  >
+                    {showPassword ? <FaEyeSlash /> : <FaEye />}
+                  </button>
                 </div>
               </div>
-            )}
 
-            <motion.button
-              type="submit"
-              className="submit-btn"
-              disabled={loading}
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              {loading ? (
-                <span className="spinner"></span>
-              ) : activeTab === "login" ? (
-                "Kirish"
-              ) : (
-                "Ro'yxatdan o'tish"
-              )}
-            </motion.button>
-          </form>
 
-          {/* Social Divider */}
-          <div className="social-divider">
-            <span>yoki</span>
-          </div>
 
-          {/* Google OAuth 2.0 Button with Official 4-Color Logo */}
-          <motion.button
-            type="button"
-            className="social-btn google-btn"
-            onClick={handleGoogleLogin}
-            disabled={loading}
-            whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            <GoogleLogo />
-            <span>Google orqali kirish</span>
-          </motion.button>
+              <motion.button
+                type="submit"
+                className="submit-btn admin-submit-btn"
+                style={{ background: "linear-gradient(135deg, #ef4444, #dc2626)" }}
+                disabled={loading}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                {loading ? <span className="spinner"></span> : "Admin Panelga Kirish"}
+              </motion.button>
+            </form>
+          )}
         </div>
       </motion.div>
     </motion.div>

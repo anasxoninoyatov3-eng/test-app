@@ -44,6 +44,12 @@ export const TestProvider = ({ children }) => {
           const diff = ["easy", "medium", "hard"].includes(data.difficulty)
             ? data.difficulty
             : "easy";
+
+          // Ensure default isActive flag is set to true if not specified
+          if (data.isActive === undefined) {
+            data.isActive = true;
+          }
+
           grouped[diff].push(data);
         });
         setTests(grouped);
@@ -60,7 +66,7 @@ export const TestProvider = ({ children }) => {
     return () => unsubscribe();
   }, []);
 
-  // Add test — directly saves to Firestore, onSnapshot updates UI automatically
+  // Add test — directly saves to Firestore with default isActive: true
   const addTest = async (test) => {
     const testsRef = collection(db, "questions");
     const hasOptionsArray =
@@ -78,6 +84,7 @@ export const TestProvider = ({ children }) => {
             test.correctAnswer ||
             (test.options.find((o) => o.isCorrect)?.text ?? ""),
           difficulty: test.difficulty || "easy",
+          isActive: true,
           createdAt: serverTimestamp(),
         }
       : {
@@ -87,11 +94,17 @@ export const TestProvider = ({ children }) => {
           optionC: test.optionC,
           correctAnswer: test.correctAnswer,
           difficulty: test.difficulty || "easy",
+          isActive: true,
           createdAt: serverTimestamp(),
         };
 
-    // Write directly to Firestore — onSnapshot will update UI in real-time
     await addDoc(testsRef, payload);
+  };
+
+  // Toggle Test Active/Inactive status
+  const toggleTestStatus = async (testId, currentStatus) => {
+    const ref = doc(db, "questions", testId);
+    await updateDoc(ref, { isActive: !currentStatus });
   };
 
   // Edit test
@@ -112,6 +125,7 @@ export const TestProvider = ({ children }) => {
             updatedTest.correctAnswer ||
             (updatedTest.options.find((o) => o.isCorrect)?.text ?? ""),
           difficulty: updatedTest.difficulty || "easy",
+          isActive: updatedTest.isActive !== undefined ? updatedTest.isActive : true,
           updatedAt: serverTimestamp(),
         }
       : {
@@ -121,6 +135,7 @@ export const TestProvider = ({ children }) => {
           optionC: updatedTest.optionC,
           correctAnswer: updatedTest.correctAnswer,
           difficulty: updatedTest.difficulty || "easy",
+          isActive: updatedTest.isActive !== undefined ? updatedTest.isActive : true,
           updatedAt: serverTimestamp(),
         };
 
@@ -133,8 +148,11 @@ export const TestProvider = ({ children }) => {
     await deleteDoc(ref);
   };
 
+  // Only get ACTIVE tests for users to solve
   const getRandomizedTests = (difficulty) => {
-    const difficultyTests = tests[difficulty] || [];
+    const difficultyTests = (tests[difficulty] || []).filter(
+      (t) => t.isActive !== false
+    );
     if (difficultyTests.length === 0) return [];
 
     const shuffledQuestions = [...difficultyTests].sort(
@@ -225,11 +243,79 @@ export const TestProvider = ({ children }) => {
     setTestResults(null);
   };
 
+  // Get active test categories / collections created by Admin
+  const getTestCategories = () => {
+    const allActive = [];
+    Object.values(tests).forEach((list) => {
+      list.forEach((t) => {
+        if (t.isActive !== false) {
+          allActive.push(t);
+        }
+      });
+    });
+
+    const categories = {};
+    allActive.forEach((t) => {
+      const catName = t.testName || "Umumiy Test";
+      if (!categories[catName]) {
+        categories[catName] = {
+          name: catName,
+          questions: [],
+          imageUrl: t.imageUrl || "",
+        };
+      }
+      categories[catName].questions.push(t);
+    });
+
+    return Object.values(categories);
+  };
+
+  const startTestByCategory = (categoryName) => {
+    let matchedQuestions = [];
+    Object.values(tests).forEach((list) => {
+      list.forEach((t) => {
+        if (t.isActive !== false) {
+          const catName = t.testName || "Umumiy Test";
+          if (catName === categoryName || categoryName === "all") {
+            matchedQuestions.push(t);
+          }
+        }
+      });
+    });
+
+    if (matchedQuestions.length === 0) return false;
+
+    const shuffledQuestions = [...matchedQuestions].sort(() => Math.random() - 0.5);
+    const preparedQuestions = shuffledQuestions.map((q) => {
+      if (Array.isArray(q.options) && q.options.length >= 2) {
+        const shuffledOptions = [...q.options].sort(() => Math.random() - 0.5);
+        const correctOption = q.options.find((o) => o.isCorrect);
+        return {
+          ...q,
+          options: shuffledOptions,
+          correctAnswer: correctOption ? correctOption.text : q.correctAnswer,
+        };
+      }
+      return q;
+    });
+
+    setCurrentTest({
+      categoryName,
+      difficulty: "easy",
+      questions: preparedQuestions,
+      currentQuestionIndex: 0,
+      answers: [],
+      startTime: Date.now(),
+    });
+    return true;
+  };
+
   const value = {
     tests,
     addTest,
     editTest,
     deleteTest,
+    toggleTestStatus,
     currentTest,
     testResults,
     startTest,
@@ -237,6 +323,8 @@ export const TestProvider = ({ children }) => {
     finishTest,
     resetTest,
     getRandomizedTests,
+    getTestCategories,
+    startTestByCategory,
     setCurrentTest,
     isLoadingTests,
     firestoreError,

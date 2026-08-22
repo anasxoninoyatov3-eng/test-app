@@ -25,6 +25,7 @@ const Home = () => {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const { currentUser, userProfile, isAdmin, logout } = useAuth();
+  const isUserAdmin = typeof isAdmin === "function" ? isAdmin() : false;
   const [showAuth, setShowAuth] = useState(false);
 
   const handleLogout = () => {
@@ -174,15 +175,17 @@ const Home = () => {
                   <span>Test Yechish</span>
                 </motion.button>
 
-                <motion.button
-                  className="action-btn create-test-btn"
-                  onClick={handleAdminPanelClick}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <FaPlusCircle className="btn-icon" />
-                  <span>Test Yaratish</span>
-                </motion.button>
+                {isUserAdmin && (
+                  <motion.button
+                    className="action-btn create-test-btn"
+                    onClick={handleAdminPanelClick}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <FaPlusCircle className="btn-icon" />
+                    <span>Admin Panel</span>
+                  </motion.button>
+                )}
               </>
             ) : (
               <>
@@ -204,16 +207,6 @@ const Home = () => {
                 >
                   <FaFileAlt className="btn-icon" />
                   <span>Test Yechish</span>
-                </motion.button>
-
-                <motion.button
-                  className="action-btn create-test-btn"
-                  onClick={handleAdminPanelClick}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <FaPlusCircle className="btn-icon" />
-                  <span>Test Yaratish</span>
                 </motion.button>
               </>
             )}

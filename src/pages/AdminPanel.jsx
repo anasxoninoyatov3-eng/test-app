@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { FiCamera, FiUploadCloud, FiImage } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import { useTest } from "../contexts/TestContext";
 import { useTheme } from "../contexts/ThemeContext";
@@ -29,11 +30,13 @@ import "../styles/AdminPanel.css";
 
 const AdminPanel = () => {
   const navigate = useNavigate();
-  const { addTest, editTest, deleteTest, tests, isLoadingTests } = useTest();
+  const { addTest, editTest, deleteTest, toggleTestStatus, tests, isLoadingTests } = useTest();
   const { theme, toggleTheme } = useTheme();
   const { logout } = useAuth();
 
   const [formData, setFormData] = useState({
+    testName: "Matematika 1-Boshqich",
+    imageUrl: "",
     question: "",
     options: [
       { id: Math.random().toString(36).slice(2), text: "", isCorrect: false },
@@ -43,9 +46,64 @@ const AdminPanel = () => {
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const videoRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  const startCamera = async () => {
+    try {
+      setIsCameraActive(true);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      }, 300);
+    } catch (err) {
+      alert("Kameraga ulanishda xatolik yoki ruxsat berilmadi: " + err.message);
+      setIsCameraActive(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const tracks = videoRef.current.srcObject.getTracks();
+      tracks.forEach((track) => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setIsCameraActive(false);
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = videoRef.current.videoWidth || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+    setFormData((prev) => ({ ...prev, imageUrl: dataUrl }));
+    stopCamera();
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("Iltimos, faqat rasm faylini tanlang!");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setFormData((prev) => ({ ...prev, imageUrl: event.target.result }));
+    };
+    reader.readAsDataURL(file);
+  };
   const [message, setMessage] = useState("");
   const [editingTest, setEditingTest] = useState(null);
-  const [showTests, setShowTests] = useState(false);
+  const [showTests, setShowTests] = useState(true);
 
   const [activeTab, setActiveTab] = useState("create");
 
@@ -148,6 +206,8 @@ const AdminPanel = () => {
       }));
 
       const newTest = {
+        testName: formData.testName.trim() || "Umumiy Test",
+        imageUrl: formData.imageUrl.trim() || "",
         question: formData.question.trim(),
         options: normalizedOptions,
         correctAnswer: correct.text,
@@ -160,6 +220,8 @@ const AdminPanel = () => {
 
       // Reset form
       setFormData({
+        testName: formData.testName || "Matematika 1-Boshqich",
+        imageUrl: "",
         question: "",
         options: [
           {
@@ -200,9 +262,11 @@ const AdminPanel = () => {
           }))
         : deriveOptionsFromLegacy(test);
     setFormData({
+      testName: test.testName || "Umumiy Test",
+      imageUrl: test.imageUrl || "",
       question: test.question,
       options,
-      difficulty: test.difficulty,
+      difficulty: test.difficulty || "easy",
     });
     setShowTests(false);
     setActiveTab("create");
@@ -249,6 +313,8 @@ const AdminPanel = () => {
 
       const updatedTest = {
         ...editingTest,
+        testName: formData.testName.trim() || "Umumiy Test",
+        imageUrl: formData.imageUrl.trim() || "",
         question: formData.question.trim(),
         options: normalizedOptions,
         correctAnswer: correct.text,
@@ -260,6 +326,8 @@ const AdminPanel = () => {
 
       // Reset form and editing state
       setFormData({
+        testName: formData.testName || "Matematika 1-Boshqich",
+        imageUrl: "",
         question: "",
         options: [
           {
@@ -503,6 +571,165 @@ const AdminPanel = () => {
                 onSubmit={editingTest ? handleUpdateTest : handleSubmit}
                 className="admin-form"
               >
+                {/* Test Nomi (Category / Subject) */}
+                <motion.div
+                  className="form-group"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: 0.1 }}
+                >
+                  <label htmlFor="testName">
+                    <FiBookOpen className="label-icon" />
+                    Test Nomi (Fan / Mavzu)
+                  </label>
+                  <div className="input-wrapper">
+                    <input
+                      type="text"
+                      id="testName"
+                      name="testName"
+                      value={formData.testName}
+                      onChange={handleInputChange}
+                      placeholder="Masalan: Matematika 1-Boshqich, Tarix, Fizika..."
+                      required
+                      className="option-input"
+                      style={{ width: "100%", padding: "1.2rem 1.5rem", borderRadius: "16px", fontSize: "1.05rem" }}
+                    />
+                  </div>
+                </motion.div>
+
+                {/* Savol Rasmi (File Upload / Camera Capture / URL) */}
+                <motion.div
+                  className="form-group"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: 0.2 }}
+                >
+                  <label>
+                    <FiImage className="label-icon" />
+                    Savol Rasmi (Fayldan yuklash yoki Kameradan rasmga olish)
+                  </label>
+
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept="image/*"
+                    onChange={handleFileUpload}
+                    style={{ display: "none" }}
+                  />
+
+                  <div className="image-source-actions" style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: "12px" }}>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        padding: "12px 20px",
+                        borderRadius: "14px",
+                        background: "linear-gradient(135deg, #6366f1, #4f46e5)",
+                        color: "white",
+                        border: "none",
+                        fontWeight: "600",
+                        cursor: "pointer",
+                        boxShadow: "0 4px 12px rgba(99, 102, 241, 0.3)",
+                      }}
+                    >
+                      <FiUploadCloud size={18} /> Fayllardan Yuklash 📁
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={isCameraActive ? stopCamera : startCamera}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        padding: "12px 20px",
+                        borderRadius: "14px",
+                        background: isCameraActive ? "#ef4444" : "linear-gradient(135deg, #10b981, #059669)",
+                        color: "white",
+                        border: "none",
+                        fontWeight: "600",
+                        cursor: "pointer",
+                        boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)",
+                      }}
+                    >
+                      <FiCamera size={18} /> {isCameraActive ? "Kamerani Yopish ❌" : "Kameradan Olish 📷"}
+                    </button>
+                  </div>
+
+                  {/* Active Camera View */}
+                  {isCameraActive && (
+                    <div style={{ textAlign: "center", background: "#000", padding: "15px", borderRadius: "16px", marginBottom: "15px" }}>
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        style={{ width: "100%", maxHeight: "320px", borderRadius: "12px", objectFit: "contain" }}
+                      />
+                      <div style={{ marginTop: "10px" }}>
+                        <button
+                          type="button"
+                          onClick={capturePhoto}
+                          style={{
+                            padding: "10px 24px",
+                            borderRadius: "30px",
+                            background: "#fbbf24",
+                            color: "#000",
+                            border: "none",
+                            fontWeight: "bold",
+                            cursor: "pointer",
+                            fontSize: "1rem",
+                          }}
+                        >
+                          📸 Rasmga Olish
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Image Preview or Manual URL fallback */}
+                  {formData.imageUrl ? (
+                    <div style={{ position: "relative", textAlign: "center", background: "rgba(255,255,255,0.05)", padding: "12px", borderRadius: "16px", border: "1px dashed rgba(255,255,255,0.2)" }}>
+                      <img
+                        src={formData.imageUrl}
+                        alt="Test rasmi"
+                        style={{ maxHeight: "200px", maxWidth: "100%", borderRadius: "10px", objectFit: "contain" }}
+                      />
+                      <div style={{ marginTop: "8px" }}>
+                        <button
+                          type="button"
+                          onClick={() => setFormData((prev) => ({ ...prev, imageUrl: "" }))}
+                          style={{
+                            padding: "6px 14px",
+                            borderRadius: "8px",
+                            background: "rgba(239, 68, 68, 0.2)",
+                            color: "#ef4444",
+                            border: "1px solid #ef4444",
+                            fontWeight: "600",
+                            cursor: "pointer",
+                            fontSize: "0.85rem",
+                          }}
+                        >
+                          🗑️ Rasmni O'chirish
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      id="imageUrl"
+                      name="imageUrl"
+                      value={formData.imageUrl}
+                      onChange={handleInputChange}
+                      placeholder="Yoki Rasm URL havolasini shu yerga kiriting..."
+                      className="option-input"
+                      style={{ width: "100%", padding: "1rem 1.2rem", borderRadius: "14px", fontSize: "0.95rem" }}
+                    />
+                  )}
+                </motion.div>
+
                 {/* Question Input */}
                 <motion.div
                   className="form-group question-group"
@@ -846,6 +1073,7 @@ const AdminPanel = () => {
                                           <h5 className="test-question">
                                             {test.question}
                                           </h5>
+                                           <span style={{ fontSize: "0.8rem", fontWeight: "bold", padding: "3px 10px", borderRadius: "12px", backgroundColor: test.isActive !== false ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)", color: test.isActive !== false ? "#10b981" : "#ef4444", border: test.isActive !== false ? "1px solid #10b981" : "1px solid #ef4444" }}>{test.isActive !== false ? "🟢 Faol (Yongan)" : "🔴 Nofaol (O\'chirilgan)"}</span>
                                           <div
                                             className="difficulty-badge"
                                             style={{
@@ -916,6 +1144,7 @@ const AdminPanel = () => {
                                         </div>
 
                                         <div className="test-actions">
+                                           <motion.button className="status-toggle-btn" onClick={() => toggleTestStatus(test.id, test.isActive !== false)} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} style={{ padding: "8px 14px", borderRadius: "10px", fontSize: "0.85rem", fontWeight: "700", border: "none", cursor: "pointer", backgroundColor: test.isActive !== false ? "#ef4444" : "#10b981", color: "#ffffff", display: "flex", alignItems: "center", gap: "6px" }}>{test.isActive !== false ? "Yashirish 🔴" : "Ko'rsatish 🟢"}</motion.button>
                                           <motion.button
                                             className="edit-btn"
                                             onClick={() => handleEditTest(test)}
