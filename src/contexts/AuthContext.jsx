@@ -133,11 +133,11 @@ export const AuthProvider = ({ children }) => {
     }
 
     if (!cleanPassword) {
-      throw new Error("Foydalanuvchilar uchun maxsus parolni kiriting!");
+      throw new Error("Parolni kiriting!");
     }
 
     if (cleanPassword !== USER_COMMON_PASSWORD && cleanPassword !== "User1234!") {
-      throw new Error(`Maxsus user paroli noto'g'ri kiritildi! To'g'ri parol: ${USER_COMMON_PASSWORD}`);
+      throw new Error("Parol noto'g'ri kiritildi!");
     }
 
     const userProfile = {
@@ -161,11 +161,11 @@ export const AuthProvider = ({ children }) => {
     const cleanEmail = (email || "admin@testapp.uz").trim().toLowerCase();
 
     if (!cleanPassword) {
-      throw new Error("Admin panelining mahsus parolini kiriting!");
+      throw new Error("Admin parolini kiriting!");
     }
 
     if (cleanPassword !== ADMIN_PASSWORD && cleanPassword !== "DilzodaAdmin@2026_SecureKey!#999") {
-      throw new Error("Admin paroli noto'g mezoniga tushdi! Noto'g'ri kiritildi.");
+      throw new Error("Admin paroli noto'g'ri kiritildi!");
     }
 
     const adminProfile = {

@@ -198,7 +198,7 @@ const Auth = ({ onClose }) => {
               </div>
 
               <div className="input-group">
-                <label>Foydalanuvchilar maxsus paroli</label>
+                <label>Parol</label>
                 <div className="input-wrapper">
                   <FaKey className="input-icon" />
                   <input
@@ -257,7 +257,7 @@ const Auth = ({ onClose }) => {
               </div>
 
               <div className="input-group">
-                <label>Shifrlangan Qiyin Admin Paroli</label>
+                <label>Admin Paroli</label>
                 <div className="input-wrapper">
                   <FaLock className="input-icon" />
                   <input
