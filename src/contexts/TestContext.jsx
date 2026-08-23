@@ -5,6 +5,7 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  writeBatch,
   doc,
   onSnapshot,
   query,
@@ -25,19 +26,19 @@ export const useTest = () => {
 export const TestProvider = ({ children }) => {
   const [tests, setTests] = useState({ easy: [], medium: [], hard: [] });
   const [allTests, setAllTests] = useState([]);
+  const [studentResults, setStudentResults] = useState([]);
   const [currentTest, setCurrentTest] = useState(null);
   const [testResults, setTestResults] = useState(null);
   const [isLoadingTests, setIsLoadingTests] = useState(true);
   const [firestoreError, setFirestoreError] = useState(null);
 
-  // Real-time Firestore listener — onSnapshot
+  // Real-time Firestore listener — questions
   useEffect(() => {
     setIsLoadingTests(true);
     const testsRef = collection(db, "questions");
-    const q = query(testsRef, orderBy("createdAt", "desc"));
 
     const unsubscribe = onSnapshot(
-      q,
+      testsRef,
       (snapshot) => {
         const grouped = { easy: [], medium: [], hard: [] };
         const flatList = [];
@@ -61,9 +62,32 @@ export const TestProvider = ({ children }) => {
         setIsLoadingTests(false);
       },
       (error) => {
-        console.error("Firestore onSnapshot xatolik:", error.code, error.message);
+        console.error("Firestore questions onSnapshot xatolik:", error.code, error.message);
         setFirestoreError(error.code);
         setIsLoadingTests(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  // Real-time Firestore listener — student test_results
+  useEffect(() => {
+    const resultsRef = collection(db, "test_results");
+    const q = query(resultsRef, orderBy("createdAt", "desc"));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setStudentResults(list);
+      },
+      (error) => {
+        // Fallback without orderBy if index is missing
+        onSnapshot(resultsRef, (snap) => {
+          const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          setStudentResults(list);
+        });
       }
     );
 
@@ -150,10 +174,125 @@ export const TestProvider = ({ children }) => {
     await updateDoc(ref, payload);
   };
 
-  // Delete test
+  // Delete test directly using Firebase native deleteDoc
   const deleteTest = async (testId) => {
-    const ref = doc(db, "questions", testId);
-    await deleteDoc(ref);
+    if (!testId) {
+      console.error("deleteTest: testId parameter is missing");
+      return;
+    }
+    try {
+      const testRef = doc(db, "questions", testId);
+      await deleteDoc(testRef);
+    } catch (err) {
+      console.error("Firebase deleteDoc error:", err);
+    }
+
+    // Optimistic state updates for both allTests and tests
+    setAllTests((prev) => prev.filter((t) => t.id !== testId));
+    setTests((prev) => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach((key) => {
+        updated[key] = updated[key].filter((t) => t.id !== testId);
+      });
+      return updated;
+    });
+  };
+
+  // Delete entire topic (all questions in topic) natively using Firebase writeBatch
+  const deleteTopic = async (topicName) => {
+    const topicQuestions = allTests.filter(
+      (t) => (t.testName || "Umumiy Test") === topicName
+    );
+    if (topicQuestions.length === 0) return;
+
+    try {
+      const batch = writeBatch(db);
+      topicQuestions.forEach((q) => {
+        if (q.id) {
+          const qRef = doc(db, "questions", q.id);
+          batch.delete(qRef);
+        }
+      });
+      await batch.commit();
+    } catch (err) {
+      console.error("Firebase batch delete error:", err);
+    }
+
+    // Optimistic state updates for both allTests and tests
+    setAllTests((prev) => prev.filter((t) => (t.testName || "Umumiy Test") !== topicName));
+    setTests((prev) => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach((key) => {
+        updated[key] = updated[key].filter(
+          (t) => (t.testName || "Umumiy Test") !== topicName
+        );
+      });
+      return updated;
+    });
+  };
+
+  // Delete student test result natively using Firebase deleteDoc
+  const deleteStudentResult = async (resultId) => {
+    if (!resultId) return;
+    try {
+      const resultRef = doc(db, "test_results", resultId);
+      await deleteDoc(resultRef);
+    } catch (err) {
+      console.error("Firebase result deleteDoc error:", err);
+    }
+    setStudentResults((prev) => prev.filter((r) => r.id !== resultId));
+  };
+
+  // Toggle Topic Active/Inactive status using Firebase writeBatch
+  const toggleTopicStatus = async (topicName, newStatus) => {
+    const topicQuestions = allTests.filter(
+      (t) => (t.testName || "Umumiy Test") === topicName
+    );
+    if (topicQuestions.length === 0) return;
+
+    // Optimistic UI updates first
+    setAllTests((prev) =>
+      prev.map((t) =>
+        (t.testName || "Umumiy Test") === topicName ? { ...t, isActive: newStatus } : t
+      )
+    );
+    setTests((prev) => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach((key) => {
+        updated[key] = updated[key].map((t) =>
+          (t.testName || "Umumiy Test") === topicName ? { ...t, isActive: newStatus } : t
+        );
+      });
+      return updated;
+    });
+
+    try {
+      const batch = writeBatch(db);
+      topicQuestions.forEach((q) => {
+        if (q.id) {
+          const qRef = doc(db, "questions", q.id);
+          batch.update(qRef, { isActive: newStatus });
+        }
+      });
+      await batch.commit();
+    } catch (err) {
+      console.error("Firebase batch update error:", err);
+    }
+  };
+
+  // Merge all existing tests into 1 single topic using Firebase writeBatch
+  const mergeAllTestsToOneTopic = async (targetTopicName = "Matematika 1-Boshqich") => {
+    if (allTests.length === 0) return;
+
+    const batch = writeBatch(db);
+    allTests.forEach((q) => {
+      if (q.id) {
+        const qRef = doc(db, "questions", q.id);
+        batch.update(qRef, { testName: targetTopicName });
+      }
+    });
+
+    await batch.commit();
   };
 
   // Only get ACTIVE tests for users to solve
@@ -224,24 +363,73 @@ export const TestProvider = ({ children }) => {
     }));
   };
 
-  const finishTest = () => {
+  const finishTest = async () => {
     if (!currentTest) return;
 
-    const correctAnswers = currentTest.answers.filter((answer, index) => {
-      const question = currentTest.questions[index];
-      return answer === question.correctAnswer;
-    }).length;
+    let savedUser = null;
+    try {
+      const u = localStorage.getItem("app_current_user");
+      if (u) savedUser = JSON.parse(u);
+    } catch (e) {}
 
+    const studentName =
+      savedUser?.username ||
+      savedUser?.firstName ||
+      savedUser?.email ||
+      "Mehmon O'quvchi";
+
+    const auditDetails = currentTest.questions.map((question, index) => {
+      const userAnswer = currentTest.answers[index] || "Javob berilmadi";
+      const isCorrect = userAnswer === question.correctAnswer;
+      return {
+        questionNumber: index + 1,
+        question: question.question,
+        userAnswer,
+        correctAnswer: question.correctAnswer,
+        isCorrect,
+      };
+    });
+
+    const correctAnswers = auditDetails.filter((a) => a.isCorrect).length;
     const totalQuestions = currentTest.questions.length;
     const percentage = Math.round((correctAnswers / totalQuestions) * 100);
+    const timeSpent = Date.now() - currentTest.startTime;
 
-    setTestResults({
+    const topicName =
+      currentTest.questions[0]?.testName ||
+      `Matematika (${currentTest.difficulty || "Oson"})`;
+
+    const resultPayload = {
+      studentName,
+      studentEmail: savedUser?.email || "",
+      studentAvatar: savedUser?.avatar || "",
+      topicName,
+      difficulty: currentTest.difficulty || "easy",
       totalQuestions,
       correctAnswers,
       incorrectAnswers: totalQuestions - correctAnswers,
       percentage,
-      timeSpent: Date.now() - currentTest.startTime,
-    });
+      timeSpent,
+      createdAt: serverTimestamp(),
+      createdDateStr:
+        new Date().toLocaleDateString("uz-UZ") +
+        " " +
+        new Date().toLocaleTimeString("uz-UZ", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      auditDetails,
+    };
+
+    setTestResults(resultPayload);
+
+    // Save to Firestore 'test_results' collection
+    try {
+      const resultsRef = collection(db, "test_results");
+      await addDoc(resultsRef, resultPayload);
+    } catch (err) {
+      console.error("Firestore test_results addDoc xatolik:", err);
+    }
 
     setCurrentTest(null);
   };
@@ -321,10 +509,15 @@ export const TestProvider = ({ children }) => {
   const value = {
     tests,
     allTests,
+    studentResults,
     addTest,
     editTest,
     deleteTest,
+    deleteTopic,
+    deleteStudentResult,
+    mergeAllTestsToOneTopic,
     toggleTestStatus,
+    toggleTopicStatus,
     currentTest,
     testResults,
     startTest,

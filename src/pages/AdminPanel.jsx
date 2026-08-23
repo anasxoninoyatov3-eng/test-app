@@ -9,6 +9,7 @@ import {
   FiTrash2,
   FiEdit2,
   FiEye,
+  FiEyeOff,
   FiLogOut,
   FiMoon,
   FiSun,
@@ -24,15 +25,33 @@ import {
   FiSettings,
   FiUsers,
   FiBarChart,
+  FiAward,
+  FiUserCheck,
+  FiClock,
+  FiUser,
 } from "react-icons/fi";
 import { motion, AnimatePresence } from "framer-motion";
 import "../styles/AdminPanel.css";
 
 const AdminPanel = () => {
   const navigate = useNavigate();
-  const { addTest, editTest, deleteTest, toggleTestStatus, tests, isLoadingTests } = useTest();
+  const {
+    addTest,
+    editTest,
+    deleteTest,
+    deleteTopic,
+    deleteStudentResult,
+    mergeAllTestsToOneTopic,
+    toggleTestStatus,
+    toggleTopicStatus,
+    tests,
+    allTests,
+    studentResults,
+    isLoadingTests,
+  } = useTest();
   const { theme, toggleTheme } = useTheme();
   const { logout } = useAuth();
+  const [selectedAuditResult, setSelectedAuditResult] = useState(null);
 
   const [formData, setFormData] = useState({
     testName: "Matematika 1-Boshqich",
@@ -271,10 +290,82 @@ const AdminPanel = () => {
   };
 
   const handleDeleteTest = async (testId) => {
-    if (window.confirm("Bu testni o'chirishni xohlaysizmi?")) {
-      await deleteTest(testId);
-      setMessage("Test muvaffaqiyatli o'chirildi!");
+    if (!testId) {
+      alert("Xatolik: Test ID topilmadi!");
+      return;
+    }
+    if (window.confirm("Bu savolni Firebase ma'lumotlar bazasidan o'chirishni xohlaysizmi?")) {
+      try {
+        await deleteTest(testId);
+        setMessage("Savol Firebase'dan muvaffaqiyatli o'chirildi!");
+        setTimeout(() => setMessage(""), 3000);
+      } catch (err) {
+        console.error("Test o'chirishda xatolik:", err);
+        alert("O'chirishda xatolik yuz berdi: " + (err.message || err));
+      }
+    }
+  };
+
+  const handleDeleteStudentResult = async (resultId) => {
+    if (!resultId) return;
+    if (window.confirm("Ushbu o'quvchining test natijasini Firebase'dan o'chirishni xohlaysizmi?")) {
+      try {
+        await deleteStudentResult(resultId);
+        setMessage("O'quvchi natijasi o'chirildi!");
+        setTimeout(() => setMessage(""), 3000);
+      } catch (err) {
+        console.error("Result delete error:", err);
+        alert("Natijani o'chirishda xatolik yuz berdi.");
+      }
+    }
+  };
+
+  const handleDeleteTopic = async (topicName) => {
+    if (
+      window.confirm(
+        `"${topicName}" mavzusini va unga tegishli barcha testlarni Firebase'dan batamom o'chirishni xohlaysizmi?`
+      )
+    ) {
+      try {
+        await deleteTopic(topicName);
+        setMessage(`"${topicName}" mavzusi va uning barcha testlari Firebase'dan o'chirildi!`);
+        setTimeout(() => setMessage(""), 3000);
+      } catch (err) {
+        console.error(err);
+        setMessage("Mavzuni o'chirishda xatolik yuz berdi.");
+      }
+    }
+  };
+
+  const handleToggleTopicStatus = async (topicName, newStatus) => {
+    try {
+      await toggleTopicStatus(topicName, newStatus);
+      setMessage(
+        newStatus
+          ? `"${topicName}" mavzusi barcha o'quvchilarga ko'rsatildi!`
+          : `"${topicName}" mavzusi o'quvchilardan yashirildi!`
+      );
       setTimeout(() => setMessage(""), 3000);
+    } catch (err) {
+      console.error(err);
+      alert("Mavzu holatini o'zgartirishda xatolik yuz berdi.");
+    }
+  };
+
+  const handleMergeAllToOneTopic = async (targetTopicName = "Matematika 1-Boshqich") => {
+    if (
+      window.confirm(
+        `Hozirgi mavjud barcha testlarni "${targetTopicName}" mavzusiga o'tkazishni xohlaysizmi?`
+      )
+    ) {
+      try {
+        await mergeAllTestsToOneTopic(targetTopicName);
+        setMessage(`Barcha testlar "${targetTopicName}" mavzusiga muvaffaqiyatli birlashtirildi!`);
+        setTimeout(() => setMessage(""), 3000);
+      } catch (err) {
+        console.error(err);
+        setMessage("Testlarni birlashtirishda xatolik yuz berdi.");
+      }
     }
   };
 
@@ -526,8 +617,17 @@ const AdminPanel = () => {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
           >
-            <FiUsers className="tab-icon" />
+            <FiBookOpen className="tab-icon" />
             Testlarni Boshqarish
+          </motion.button>
+          <motion.button
+            className={`tab-btn ${activeTab === "results" ? "active" : ""}`}
+            onClick={() => setActiveTab("results")}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <FiAward className="tab-icon" />
+            O'quvchilar Natijalari
           </motion.button>
           <motion.button
             className={`tab-btn ${activeTab === "stats" ? "active" : ""}`}
@@ -931,221 +1031,263 @@ const AdminPanel = () => {
           )}
 
           {/* Manage Tests Tab */}
-          {activeTab === "manage" && (
+          {activeTab === "manage" && (() => {
+            // Group all tests by topic name
+            const allTestsList = allTests && allTests.length > 0 ? allTests : Object.values(tests).flat();
+            const topicMap = {};
+            allTestsList.forEach((t) => {
+              const name = t.testName || "Umumiy Test";
+              if (!topicMap[name]) topicMap[name] = [];
+              topicMap[name].push(t);
+            });
+            const topicEntries = Object.entries(topicMap);
+
+            return (
+              <motion.div
+                key="manage"
+                initial={{ opacity: 0, x: -50 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 50 }}
+                transition={{ duration: 0.5 }}
+                className="admin-card manage-tests-card"
+              >
+                <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
+                  <div>
+                    <motion.div
+                      className="header-icon"
+                      animate={{ rotate: [0, -10, 10, 0] }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                    >
+                      <FiBookOpen />
+                    </motion.div>
+                    <h2>Mavzularni Boshqarish</h2>
+                    <p>Mavjud mavzularni ko'rish, testlarini tahrirlash va o'chirish</p>
+                  </div>
+
+                  {allTestsList.length > 0 && (
+                    <motion.button
+                      type="button"
+                      onClick={() => handleMergeAllToOneTopic("Matematika 1-Boshqich")}
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.97 }}
+                      style={{
+                        padding: "10px 18px",
+                        borderRadius: "14px",
+                        background: "linear-gradient(135deg, #8b5cf6, #6366f1)",
+                        color: "white",
+                        border: "none",
+                        fontWeight: "600",
+                        cursor: "pointer",
+                        fontSize: "0.9rem",
+                        boxShadow: "0 4px 14px rgba(139, 92, 246, 0.3)",
+                      }}
+                    >
+                      🎯 Barcha testlarni 1 ta mavzuga o'tkazish
+                    </motion.button>
+                  )}
+                </div>
+
+                {isLoadingTests ? (
+                  <div className="loading-state">
+                    <motion.div
+                      className="loading-spinner large"
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                    />
+                    <p>Yuklanmoqda...</p>
+                  </div>
+                ) : topicEntries.length === 0 ? (
+                  <div className="no-tests" style={{ textAlign: "center", padding: "3rem" }}>
+                    <FiBookOpen className="no-tests-icon" style={{ fontSize: "3rem", opacity: 0.4 }} />
+                    <p style={{ marginTop: "1rem", opacity: 0.6 }}>Hali hech qanday mavzu qo'shilmagan</p>
+                  </div>
+                ) : (
+                  <div className="topics-accordion">
+                    {topicEntries.map(([topicName, topicTests], topicIdx) => (
+                      <TopicAccordionItem
+                        key={topicName}
+                        topicName={topicName}
+                        topicTests={topicTests}
+                        topicIdx={topicIdx}
+                        toggleTestStatus={toggleTestStatus}
+                        handleToggleTopicStatus={handleToggleTopicStatus}
+                        handleEditTest={handleEditTest}
+                        handleDeleteTest={handleDeleteTest}
+                        handleDeleteTopic={handleDeleteTopic}
+                        getDifficultyIcon={getDifficultyIcon}
+                        getDifficultyColor={getDifficultyColor}
+                        formatDate={formatDate}
+                        setActiveTab={setActiveTab}
+                      />
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            );
+          })()}
+
+          {/* Student Results & Audit Tab */}
+          {activeTab === "results" && (
             <motion.div
-              key="manage"
+              key="results"
               initial={{ opacity: 0, x: -50 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 50 }}
               transition={{ duration: 0.5 }}
-              className="admin-card manage-tests-card"
+              className="admin-card student-results-card"
             >
               <div className="card-header">
                 <motion.div
                   className="header-icon"
-                  animate={{ rotate: [0, -10, 10, 0] }}
+                  animate={{ scale: [1, 1.1, 1] }}
                   transition={{ duration: 2, repeat: Infinity }}
                 >
-                  <FiUsers />
+                  <FiAward />
                 </motion.div>
-                <h2>Testlarni Boshqarish</h2>
-                <p>Mavjud testlarni ko'rish, tahrirlash va o'chirish</p>
+                <h2>O'quvchilar Natijalari va Audit Tahlili</h2>
+                <p>Test topshirgan o'quvchilar ro'yxati, bali, to'g'ri/noto'g'ri javoblari va har bir savol auditi</p>
               </div>
 
-              <div className="tests-section">
-                <div className="tests-header">
-                  <h3>Mavjud Testlar</h3>
-                  <motion.button
-                    className="toggle-tests-btn"
-                    onClick={toggleShowTests}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    <FiEye className="btn-icon" />
-                    {showTests ? "Yashirish" : "Ko'rsatish"}
-                  </motion.button>
+              {studentResults.length === 0 ? (
+                <div className="no-tests" style={{ textAlign: "center", padding: "3rem" }}>
+                  <FiUserCheck style={{ fontSize: "3.5rem", opacity: 0.3, color: "#8b5cf6" }} />
+                  <p style={{ marginTop: "1rem", fontSize: "1.1rem", opacity: 0.7 }}>Hali hech bir o'quvchi test topshirmagan</p>
+                  <span style={{ fontSize: "0.85rem", opacity: 0.5 }}>O'quvchilar test ishlaganda uning barcha natijalari va audit tahlili shu yerda avtomatik ko'rinadi.</span>
                 </div>
+              ) : (
+                <div className="student-results-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "1.2rem", marginTop: "1.5rem" }}>
+                  {studentResults.map((result, idx) => {
+                    const pct = result.percentage || 0;
+                    const pctColor = pct >= 80 ? "#10b981" : pct >= 50 ? "#f59e0b" : "#ef4444";
+                    const formatDuration = (ms) => {
+                      if (!ms) return "0:00";
+                      const sec = Math.floor(ms / 1000);
+                      const m = Math.floor(sec / 60);
+                      const s = sec % 60;
+                      return `${m}:${s.toString().padStart(2, "0")}`;
+                    };
 
-                <AnimatePresence>
-                  {showTests && (
-                    <motion.div
-                      className="tests-list"
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.5 }}
-                    >
-                      {isLoadingTests ? (
-                        <div className="loading-state">
-                          <motion.div
-                            className="loading-spinner large"
-                            animate={{ rotate: 360 }}
-                            transition={{
-                              duration: 1,
-                              repeat: Infinity,
-                              ease: "linear",
-                            }}
-                          />
-                          <p>Yuklanmoqda...</p>
-                        </div>
-                      ) : (() => {
-                          // Group tests by testName (topic)
-                          const allTestsList = Object.values(tests).flat();
-                          const topicMap = {};
-                          allTestsList.forEach((t) => {
-                            const name = t.testName || "Umumiy Test";
-                            if (!topicMap[name]) topicMap[name] = [];
-                            topicMap[name].push(t);
-                          });
-                          const topicEntries = Object.entries(topicMap);
-                          if (topicEntries.length === 0) {
-                            return (
-                              <div className="no-tests">
-                                <FiBookOpen className="no-tests-icon" />
-                                <p>Hali testlar qo'shilmagan</p>
-                              </div>
-                            );
-                          }
-                          return topicEntries.map(([topicName, topicTests]) => (
-                            <motion.div
-                              key={topicName}
-                              className="difficulty-section"
-                              initial={{ opacity: 0, y: 20 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              transition={{ duration: 0.5 }}
-                            >
-                              <h4 className="difficulty-title">
-                                <FiBookOpen className="difficulty-icon easy" />
-                                <span>{topicName}</span>
-                                <span className="test-count">
-                                  ({topicTests.length} ta savol)
-                                </span>
-                              </h4>
-
-                              <div className="tests-grid">
-                                  {topicTests.map((test, index) => (
-                                    <motion.div
-                                      key={test.id}
-                                      className="test-card"
-                                      initial={{ opacity: 0, y: 20 }}
-                                      animate={{ opacity: 1, y: 0 }}
-                                      transition={{
-                                        duration: 0.4,
-                                        delay: index * 0.1,
-                                      }}
-                                      whileHover={{ y: -8, scale: 1.02 }}
-                                      layout
-                                    >
-                                      <div className="test-content">
-                                        <div className="test-header">
-                                          <h5 className="test-question">
-                                            {test.question}
-                                          </h5>
-                                           <span style={{ fontSize: "0.8rem", fontWeight: "bold", padding: "3px 10px", borderRadius: "12px", backgroundColor: test.isActive !== false ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)", color: test.isActive !== false ? "#10b981" : "#ef4444", border: test.isActive !== false ? "1px solid #10b981" : "1px solid #ef4444" }}>{test.isActive !== false ? "🟢 Faol (Yongan)" : "🔴 Nofaol (O\'chirilgan)"}</span>
-                                          <div
-                                            className="difficulty-badge"
-                                            style={{
-                                              backgroundColor:
-                                                getDifficultyColor(
-                                                  test.difficulty
-                                                ),
-                                            }}
-                                          >
-                                            {getDifficultyIcon(test.difficulty)}
-                                          </div>
-                                        </div>
-
-                                        <div className="test-options">
-                                          {Array.isArray(test.options) &&
-                                          test.options.length
-                                            ? test.options.map((o, i) => (
-                                                <div
-                                                  className="option"
-                                                  key={o.id || i}
-                                                >
-                                                  <span className="option-label">
-                                                    {String.fromCharCode(
-                                                      65 + i
-                                                    )}
-                                                    :
-                                                  </span>
-                                                  <span className="option-text">
-                                                    {o.text}
-                                                  </span>
-                                                  {o.isCorrect && (
-                                                    <FiCheckCircle className="correct-indicator" />
-                                                  )}
-                                                </div>
-                                              ))
-                                            : [
-                                                test.optionA,
-                                                test.optionB,
-                                                test.optionC,
-                                              ]
-                                                .filter(Boolean)
-                                                .map((t, i) => (
-                                                  <div
-                                                    className="option"
-                                                    key={i}
-                                                  >
-                                                    <span className="option-label">
-                                                      {String.fromCharCode(
-                                                        65 + i
-                                                      )}
-                                                      :
-                                                    </span>
-                                                    <span className="option-text">
-                                                      {t}
-                                                    </span>
-                                                  </div>
-                                                ))}
-                                        </div>
-
-                                        <div className="test-info">
-                                          <span className="correct-answer">
-                                            <FiCheckCircle className="info-icon" />
-                                            To'g'ri: {test.correctAnswer}
-                                          </span>
-                                          <span className="test-date">
-                                            {formatDate(test.createdAt)}
-                                          </span>
-                                        </div>
-
-                                        <div className="test-actions">
-                                           <motion.button className="status-toggle-btn" onClick={() => toggleTestStatus(test.id, test.isActive !== false)} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} style={{ padding: "8px 14px", borderRadius: "10px", fontSize: "0.85rem", fontWeight: "700", border: "none", cursor: "pointer", backgroundColor: test.isActive !== false ? "#ef4444" : "#10b981", color: "#ffffff", display: "flex", alignItems: "center", gap: "6px" }}>{test.isActive !== false ? "Yashirish 🔴" : "Ko'rsatish 🟢"}</motion.button>
-                                          <motion.button
-                                            className="edit-btn"
-                                            onClick={() => handleEditTest(test)}
-                                            whileHover={{ scale: 1.05 }}
-                                            whileTap={{ scale: 0.95 }}
-                                          >
-                                            <FiEdit2 className="btn-icon" />
-                                            Tahrirlash
-                                          </motion.button>
-
-                                          <motion.button
-                                            className="delete-btn"
-                                            onClick={() =>
-                                              handleDeleteTest(test.id)
-                                            }
-                                            whileHover={{ scale: 1.05 }}
-                                            whileTap={{ scale: 0.95 }}
-                                          >
-                                            <FiTrash2 className="btn-icon" />
-                                            O'chirish
-                                          </motion.button>
-                                        </div>
-                                      </div>
-                                    </motion.div>
-                                  ))}
+                    return (
+                      <motion.div
+                        key={result.id || idx}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: idx * 0.05 }}
+                        style={{
+                          background: "rgba(255, 255, 255, 0.04)",
+                          border: "1px solid rgba(255, 255, 255, 0.12)",
+                          borderRadius: "18px",
+                          padding: "1.3rem",
+                          display: "flex",
+                          flexDirection: "column",
+                          justifyContent: "space-between",
+                          boxShadow: "0 8px 30px rgba(0,0,0,0.2)",
+                        }}
+                      >
+                        <div>
+                          {/* Student info header */}
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                              {result.studentAvatar ? (
+                                <img src={result.studentAvatar} alt="avatar" style={{ width: "42px", height: "42px", borderRadius: "50%", background: "#6366f1" }} />
+                              ) : (
+                                <div style={{ width: "42px", height: "42px", borderRadius: "50%", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: "bold" }}>
+                                  <FiUser style={{ fontSize: "1.2rem" }} />
                                 </div>
-                            </motion.div>
-                          ));
-                        })()}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+                              )}
+                              <div>
+                                <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: "700" }}>{result.studentName || "Noma'lum O'quvchi"}</h3>
+                                {result.studentEmail && (
+                                  <span style={{ fontSize: "0.8rem", opacity: 0.6 }}>{result.studentEmail}</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Percentage badge */}
+                            <div style={{ padding: "6px 14px", borderRadius: "20px", background: `${pctColor}22`, border: `1px solid ${pctColor}55`, color: pctColor, fontWeight: "800", fontSize: "1.1rem" }}>
+                              {pct}%
+                            </div>
+                          </div>
+
+                          {/* Details */}
+                          <div style={{ background: "rgba(255,255,255,0.03)", padding: "12px", borderRadius: "12px", marginBottom: "1rem", fontSize: "0.9rem", display: "flex", flexDirection: "column", gap: "6px" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ opacity: 0.7 }}>Mavzu:</span>
+                              <strong style={{ color: "#a855f7" }}>{result.topicName || "Umumiy Test"}</strong>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ opacity: 0.7 }}>Natija:</span>
+                              <span>
+                                <strong style={{ color: "#10b981" }}>{result.correctAnswers || 0} to'g'ri</strong> / <strong style={{ color: "#ef4444" }}>{result.incorrectAnswers || 0} noto'g'ri</strong> ({result.totalQuestions || 0} ta)
+                              </span>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ opacity: 0.7 }}>Sarflangan vaqt:</span>
+                              <span>⏱️ {formatDuration(result.timeSpent)}</span>
+                            </div>
+                            {result.createdDateStr && (
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ opacity: 0.7 }}>Sana:</span>
+                                <span style={{ opacity: 0.8, fontSize: "0.82rem" }}>📅 {result.createdDateStr}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{ display: "flex", gap: "10px", marginTop: "0.5rem" }}>
+                          <motion.button
+                            type="button"
+                            onClick={() => setSelectedAuditResult(result)}
+                            whileHover={{ scale: 1.03 }}
+                            whileTap={{ scale: 0.97 }}
+                            style={{
+                              flex: 1,
+                              padding: "10px",
+                              borderRadius: "12px",
+                              background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                              color: "white",
+                              border: "none",
+                              fontWeight: "600",
+                              cursor: "pointer",
+                              fontSize: "0.85rem",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: "6px",
+                            }}
+                          >
+                            <FiSearch /> Kichik Audit 🔍
+                          </motion.button>
+
+                          <motion.button
+                            type="button"
+                            onClick={() => handleDeleteStudentResult(result.id)}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            style={{
+                              padding: "10px 14px",
+                              borderRadius: "12px",
+                              background: "rgba(239, 68, 68, 0.15)",
+                              color: "#ef4444",
+                              border: "1px solid rgba(239, 68, 68, 0.3)",
+                              fontWeight: "600",
+                              cursor: "pointer",
+                              fontSize: "0.85rem",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px",
+                            }}
+                            title="O'quvchi natijasini bazadan o'chirish"
+                          >
+                            <FiTrash2 /> O'chirish
+                          </motion.button>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )}
             </motion.div>
           )}
 
@@ -1248,8 +1390,557 @@ const AdminPanel = () => {
           )}
         </AnimatePresence>
       </main>
+
+      {/* Audit Details Modal */}
+      <AnimatePresence>
+        {selectedAuditResult && (
+          <AuditModal
+            result={selectedAuditResult}
+            onClose={() => setSelectedAuditResult(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };
 
 export default AdminPanel;
+
+// TopicAccordionItem component for Manage Tests tab
+const TopicAccordionItem = ({
+  topicName,
+  topicTests,
+  topicIdx,
+  toggleTestStatus,
+  handleToggleTopicStatus,
+  handleEditTest,
+  handleDeleteTest,
+  handleDeleteTopic,
+  getDifficultyIcon,
+  getDifficultyColor,
+  formatDate,
+  setActiveTab,
+}) => {
+  const [isOpen, setIsOpen] = useState(topicIdx === 0);
+
+  const isTopicActive = topicTests.some((t) => t.isActive !== false);
+  const activeCount = topicTests.filter((t) => t.isActive !== false).length;
+  const totalCount = topicTests.length;
+
+  return (
+    <motion.div
+      className="topic-accordion-card"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: topicIdx * 0.08 }}
+      style={{
+        background: "rgba(255, 255, 255, 0.03)",
+        border: isTopicActive ? "1px solid rgba(255, 255, 255, 0.1)" : "1px solid rgba(239, 68, 68, 0.3)",
+        borderRadius: "20px",
+        marginBottom: "1.5rem",
+        overflow: "hidden",
+        boxShadow: "0 8px 32px 0 rgba(0, 0, 0, 0.2)",
+        opacity: isTopicActive ? 1 : 0.75,
+      }}
+    >
+      {/* Header */}
+      <div
+        className="topic-accordion-header"
+        style={{
+          padding: "1.2rem 1.5rem",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          background: isTopicActive ? "rgba(255, 255, 255, 0.05)" : "rgba(239, 68, 68, 0.05)",
+          cursor: "pointer",
+          userSelect: "none",
+          gap: "1rem",
+          flexWrap: "wrap",
+        }}
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem", flex: 1, minWidth: "220px" }}>
+          <motion.div
+            animate={{ rotate: isOpen ? 90 : 0 }}
+            transition={{ duration: 0.3 }}
+            style={{ display: "flex", alignItems: "center", color: "#6366f1", fontSize: "1.3rem" }}
+          >
+            <FiChevronRight />
+          </motion.div>
+          <div>
+            <h3 style={{ margin: 0, fontSize: "1.2rem", fontWeight: "700", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <FiBookOpen style={{ color: "#a855f7" }} />
+              {topicName}
+            </h3>
+            <span style={{ fontSize: "0.85rem", opacity: 0.7, marginTop: "4px", display: "inline-block" }}>
+              Jami savollar: {totalCount} ta | Faol: {activeCount} ta
+            </span>
+          </div>
+        </div>
+
+        {/* Topic Level Actions */}
+        <div
+          style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Status Badge */}
+          <span
+            style={{
+              padding: "5px 12px",
+              borderRadius: "20px",
+              fontSize: "0.8rem",
+              fontWeight: "700",
+              background: isTopicActive ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)",
+              color: isTopicActive ? "#10b981" : "#ef4444",
+              border: isTopicActive ? "1px solid rgba(16, 185, 129, 0.4)" : "1px solid rgba(239, 68, 68, 0.4)",
+            }}
+          >
+            {isTopicActive ? "🟢 Faol Mavzu" : "🔴 Yashirilgan"}
+          </span>
+
+          {/* Toggle Topic Visibility Button */}
+          <motion.button
+            type="button"
+            onClick={() => handleToggleTopicStatus(topicName, !isTopicActive)}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "8px 14px",
+              borderRadius: "12px",
+              background: isTopicActive ? "rgba(245, 158, 11, 0.15)" : "rgba(16, 185, 129, 0.15)",
+              color: isTopicActive ? "#f59e0b" : "#10b981",
+              border: isTopicActive ? "1px solid rgba(245, 158, 11, 0.4)" : "1px solid rgba(16, 185, 129, 0.4)",
+              fontWeight: "600",
+              cursor: "pointer",
+              fontSize: "0.85rem",
+            }}
+            title={isTopicActive ? "Ushbu mavzuni barcha o'quvchilardan yashirish" : "Ushbu mavzuni o'quvchilarga ko'rsatish"}
+          >
+            {isTopicActive ? <FiEyeOff /> : <FiEye />}
+            {isTopicActive ? "Mavzuni Yashirish" : "Mavzuni Ko'rsatish"}
+          </motion.button>
+
+          <motion.button
+            type="button"
+            onClick={() => handleDeleteTopic(topicName)}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "8px 14px",
+              borderRadius: "12px",
+              background: "rgba(239, 68, 68, 0.15)",
+              color: "#ef4444",
+              border: "1px solid rgba(239, 68, 68, 0.4)",
+              fontWeight: "600",
+              cursor: "pointer",
+              fontSize: "0.85rem",
+            }}
+            title="Ushbu mavzu va uning barcha testlarini Firebase'dan o'chirish"
+          >
+            <FiTrash2 /> Mavzuni O'chirish 🔥
+          </motion.button>
+
+          <motion.button
+            type="button"
+            onClick={() => setIsOpen(!isOpen)}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "8px 14px",
+              borderRadius: "12px",
+              background: "rgba(99, 102, 241, 0.15)",
+              color: "#6366f1",
+              border: "1px solid rgba(99, 102, 241, 0.4)",
+              fontWeight: "600",
+              cursor: "pointer",
+              fontSize: "0.85rem",
+            }}
+          >
+            <FiEye /> {isOpen ? "Yopish" : "Savollar"}
+          </motion.button>
+        </div>
+      </div>
+
+      {/* Accordion Content (Questions) */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+            style={{ padding: "1.5rem" }}
+          >
+            <div
+              className="topic-questions-grid"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+                gap: "1.2rem",
+              }}
+            >
+              {topicTests.map((test, index) => {
+                const isLegacy = !Array.isArray(test.options);
+                const optionsList = isLegacy
+                  ? [
+                      { id: "a", text: test.optionA, isCorrect: test.correctAnswer === test.optionA },
+                      { id: "b", text: test.optionB, isCorrect: test.correctAnswer === test.optionB },
+                      { id: "c", text: test.optionC, isCorrect: test.correctAnswer === test.optionC },
+                    ].filter((o) => o.text)
+                  : test.options || [];
+
+                return (
+                  <motion.div
+                    key={test.id}
+                    className={`test-item-card ${test.isActive === false ? "inactive" : ""}`}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.3, delay: index * 0.05 }}
+                    style={{
+                      background: "rgba(255, 255, 255, 0.04)",
+                      border: test.isActive === false ? "1px solid rgba(239, 68, 68, 0.3)" : "1px solid rgba(255, 255, 255, 0.12)",
+                      borderRadius: "16px",
+                      padding: "1.2rem",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      position: "relative",
+                      opacity: test.isActive === false ? 0.65 : 1,
+                    }}
+                  >
+                    <div>
+                      {/* Badge and Status */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.8rem" }}>
+                        <span
+                          style={{
+                            fontSize: "0.75rem",
+                            padding: "4px 10px",
+                            borderRadius: "20px",
+                            background: test.isActive === false ? "rgba(239, 68, 68, 0.2)" : "rgba(16, 185, 129, 0.2)",
+                            color: test.isActive === false ? "#ef4444" : "#10b981",
+                            fontWeight: "600",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: test.isActive === false ? "#ef4444" : "#10b981" }}></span>
+                          {test.isActive === false ? "Yashirin" : "Faol (Yongan)"}
+                        </span>
+
+                        <span style={{ fontSize: "0.8rem", opacity: 0.6 }}>
+                          {formatDate(test.createdAt)}
+                        </span>
+                      </div>
+
+                      {/* Question Image if present */}
+                      {test.imageUrl && (
+                        <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+                          <img
+                            src={test.imageUrl}
+                            alt="Savol rasmi"
+                            style={{ maxHeight: "120px", maxWidth: "100%", borderRadius: "10px", objectFit: "cover" }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Question Text */}
+                      <h4 style={{ margin: "0 0 1rem 0", fontSize: "1.05rem", fontWeight: "600", lineHeight: "1.4" }}>
+                        {index + 1}. {test.question}
+                      </h4>
+
+                      {/* Options Preview */}
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "1.2rem" }}>
+                        {optionsList.map((opt, oIdx) => (
+                          <div
+                            key={opt.id || oIdx}
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: "8px",
+                              background: opt.isCorrect || opt.text === test.correctAnswer
+                                ? "rgba(16, 185, 129, 0.15)"
+                                : "rgba(255, 255, 255, 0.03)",
+                              border: opt.isCorrect || opt.text === test.correctAnswer
+                                ? "1px solid rgba(16, 185, 129, 0.4)"
+                                : "1px solid rgba(255, 255, 255, 0.05)",
+                              fontSize: "0.88rem",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                            }}
+                          >
+                            <span>
+                              <strong>{String.fromCharCode(65 + oIdx)}:</strong> {opt.text}
+                            </span>
+                            {(opt.isCorrect || opt.text === test.correctAnswer) && (
+                              <FiCheckCircle style={{ color: "#10b981", fontSize: "0.9rem" }} />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Question Action Buttons (Tahrirlash & O'chirish) */}
+                    <div style={{ display: "flex", gap: "8px", marginTop: "0.8rem", paddingTop: "0.8rem", borderTop: "1px solid rgba(255, 255, 255, 0.08)" }}>
+
+                      <button
+                        type="button"
+                        onClick={() => handleEditTest(test)}
+                        style={{
+                          flex: 1,
+                          padding: "8px",
+                          borderRadius: "10px",
+                          background: "#6366f1",
+                          color: "white",
+                          border: "none",
+                          fontWeight: "600",
+                          cursor: "pointer",
+                          fontSize: "0.8rem",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: "4px",
+                        }}
+                      >
+                        <FiEdit2 /> Tahrirlash
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTest(test.id)}
+                        style={{
+                          flex: 1,
+                          padding: "8px",
+                          borderRadius: "10px",
+                          background: "#dc2626",
+                          color: "white",
+                          border: "none",
+                          fontWeight: "600",
+                          cursor: "pointer",
+                          fontSize: "0.8rem",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: "4px",
+                        }}
+                        title="Savolni Firebase'dan o'chirish"
+                      >
+                        <FiTrash2 /> O'chirish
+                      </button>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+};
+
+// Audit Modal component
+const AuditModal = ({ result, onClose }) => {
+  if (!result) return null;
+
+  const auditList = result.auditDetails || [];
+  const pct = result.percentage || 0;
+  const pctColor = pct >= 80 ? "#10b981" : pct >= 50 ? "#f59e0b" : "#ef4444";
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "rgba(0, 0, 0, 0.8)",
+        backdropFilter: "blur(8px)",
+        zIndex: 9999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "1rem",
+      }}
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#181824",
+          color: "white",
+          borderRadius: "24px",
+          width: "100%",
+          maxWidth: "750px",
+          maxHeight: "85vh",
+          overflowY: "auto",
+          padding: "2rem",
+          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)",
+          border: "1px solid rgba(255, 255, 255, 0.15)",
+        }}
+      >
+        {/* Modal Header */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            marginBottom: "1.5rem",
+            borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
+            paddingBottom: "1rem",
+          }}
+        >
+          <div>
+            <span style={{ color: "#a855f7", fontWeight: "600", fontSize: "0.85rem" }}>
+              🔍 O'quvchi Audit Tahlili
+            </span>
+            <h2 style={{ margin: "4px 0 0 0", fontSize: "1.5rem", fontWeight: "800" }}>
+              {result.studentName}
+            </h2>
+            <p style={{ margin: "4px 0 0 0", opacity: 0.7, fontSize: "0.9rem" }}>
+              Mavzu: <strong style={{ color: "#a855f7" }}>{result.topicName || "Umumiy Test"}</strong>
+            </p>
+          </div>
+
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: "1.8rem", fontWeight: "900", color: pctColor }}>
+              {pct}%
+            </div>
+            <span style={{ fontSize: "0.85rem", opacity: 0.7 }}>
+              {result.correctAnswers} / {result.totalQuestions} to'g'ri
+            </span>
+          </div>
+        </div>
+
+        {/* Audit details list */}
+        <h3
+          style={{
+            fontSize: "1.1rem",
+            marginBottom: "1rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+          }}
+        >
+          <FiSearch style={{ color: "#6366f1" }} /> Savollar va Javoblar Auditi:
+        </h3>
+
+        {auditList.length === 0 ? (
+          <p style={{ opacity: 0.6, textAlign: "center", padding: "2rem" }}>
+            Savollar bo'yicha batafsil audit ma'lumotlari topilmadi.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            {auditList.map((item, i) => (
+              <div
+                key={i}
+                style={{
+                  background: item.isCorrect
+                    ? "rgba(16, 185, 129, 0.08)"
+                    : "rgba(239, 68, 68, 0.08)",
+                  border: item.isCorrect
+                    ? "1px solid rgba(16, 185, 129, 0.3)"
+                    : "1px solid rgba(239, 68, 68, 0.3)",
+                  borderRadius: "16px",
+                  padding: "1rem 1.2rem",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: "10px",
+                    marginBottom: "8px",
+                  }}
+                >
+                  <span style={{ fontWeight: "700", fontSize: "0.95rem", flex: 1 }}>
+                    {item.questionNumber || i + 1}. {item.question}
+                  </span>
+                  <span
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: "20px",
+                      fontSize: "0.78rem",
+                      fontWeight: "700",
+                      background: item.isCorrect
+                        ? "rgba(16, 185, 129, 0.2)"
+                        : "rgba(239, 68, 68, 0.2)",
+                      color: item.isCorrect ? "#10b981" : "#ef4444",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    {item.isCorrect ? <FiCheckCircle /> : <FiXCircle />}
+                    {item.isCorrect ? "To'g'ri" : "Noto'g'ri"}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "10px",
+                    fontSize: "0.88rem",
+                    marginTop: "8px",
+                    background: "rgba(0,0,0,0.25)",
+                    padding: "10px 14px",
+                    borderRadius: "10px",
+                  }}
+                >
+                  <div>
+                    <span style={{ opacity: 0.6, display: "block", fontSize: "0.75rem" }}>
+                      O'quvchi javobi:
+                    </span>
+                    <strong style={{ color: item.isCorrect ? "#10b981" : "#ef4444" }}>
+                      {item.userAnswer}
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ opacity: 0.6, display: "block", fontSize: "0.75rem" }}>
+                      To'g'ri javob:
+                    </span>
+                    <strong style={{ color: "#10b981" }}>{item.correctAnswer}</strong>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Modal Close Button */}
+        <div style={{ marginTop: "1.8rem", textAlign: "right" }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: "10px 24px",
+              borderRadius: "12px",
+              background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+              color: "white",
+              border: "none",
+              fontWeight: "600",
+              cursor: "pointer",
+            }}
+          >
+            Yopish
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
