@@ -5,19 +5,17 @@ import {
   FaArrowLeft,
   FaArrowRight,
   FaFileAlt,
-  FaFrown,
-  FaMeh,
   FaMoon,
-  FaSmile,
   FaSun,
   FaBookOpen,
-  FaCheckCircle,
+  FaPlayCircle,
+  FaListAlt,
 } from "react-icons/fa";
 import "../styles/TestSelection.css";
 
 const TestSelection = () => {
   const navigate = useNavigate();
-  const { tests, isLoadingTests, getTestCategories, startTestByCategory, startTest } = useTest();
+  const { tests, isLoadingTests, getTestCategories, startTestByCategory } = useTest();
   const { theme, toggleTheme } = useTheme();
 
   const categories = getTestCategories ? getTestCategories() : [];
@@ -31,7 +29,7 @@ const TestSelection = () => {
     if (started) {
       navigate(`/test/${encodeURIComponent(categoryName)}`);
     } else {
-      alert("Ushbu test to'plamida yoqilgan testlar topilmadi!");
+      alert("Ushbu mavzuda faol testlar topilmadi!");
     }
   };
 
@@ -60,7 +58,7 @@ const TestSelection = () => {
           <span className="back-text">Orqaga</span>
         </button>
 
-        <h1 className="selection-title">Mavjud Testlar Ro'yxati</h1>
+        <h1 className="selection-title">Mavzular Ro'yxati</h1>
 
         <button className="theme-toggle-selection" onClick={toggleTheme}>
           {theme === "light" ? <FaMoon /> : <FaSun />}
@@ -71,114 +69,75 @@ const TestSelection = () => {
       <main className="selection-main animate-fade-in-up">
         <div className="selection-content">
           <div className="selection-description">
-            <h2>Admin tomonidan yoqilgan test to'plamlari</h2>
-            <p>O'zingizga ma'qul bo'lgan testni tanlang va bilimingizni sinab ko'ring</p>
+            <h2>Test mavzusini tanlang</h2>
+            <p>O'zingizga mos mavzuni tanlab, bilimingizni sinab ko'ring</p>
           </div>
 
-          <div className="difficulty-cards">
-            {categories.length > 0 ? (
-              categories.map((cat, index) => (
+          {/* Loading state */}
+          {isLoadingTests && (
+            <div className="topics-loading">
+              <div className="topic-loading-spinner"></div>
+              <p>Mavzular yuklanmoqda...</p>
+            </div>
+          )}
+
+          {/* Category cards */}
+          {!isLoadingTests && categories.length > 0 && (
+            <div className="topics-grid">
+              {categories.map((cat, index) => (
                 <div
                   key={cat.name || index}
-                  className="difficulty-card animate-bounce-in"
-                  style={{ animationDelay: `${index * 0.15}s` }}
+                  className="topic-card animate-bounce-in"
+                  style={{ animationDelay: `${index * 0.1}s` }}
+                  onClick={() => handleStartCategory(cat.name)}
                 >
-                  <div className="card-header-selection">
-                    <div
-                      className="difficulty-icon"
-                      style={{ background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)" }}
-                    >
-                      <FaBookOpen />
-                    </div>
-                    <h3 className="difficulty-name">{cat.name}</h3>
-                  </div>
-
-                  <div className="card-content">
-                    <div className="test-count">
-                      <span className="count-number">{cat.questions.length}</span>
-                      <span className="count-label">ta savol</span>
-                    </div>
-
-                    <div className="difficulty-description" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "5px", color: "#10b981", fontWeight: "600" }}>
-                      <FaCheckCircle /> Admin yoqqan (Faol)
+                  {/* Card image area */}
+                  <div className="topic-card-image">
+                    {cat.imageUrl ? (
+                      <img src={cat.imageUrl} alt={cat.name} className="topic-img" />
+                    ) : (
+                      <div className="topic-img-placeholder">
+                        <FaBookOpen className="placeholder-icon" />
+                      </div>
+                    )}
+                    {/* Topic badge */}
+                    <div className="topic-count-badge">
+                      <FaListAlt className="badge-icon" />
+                      <span>{cat.questions.length} ta savol</span>
                     </div>
                   </div>
 
-                  <div className="card-footer">
+                  {/* Card body */}
+                  <div className="topic-card-body">
+                    <h3 className="topic-name">{cat.name}</h3>
+
+                    <div className="topic-meta">
+                      <div className="topic-questions-info">
+                        <div className="questions-count-display">
+                          <span className="count-big">{cat.questions.length}</span>
+                          <span className="count-unit">ta savol</span>
+                        </div>
+                      </div>
+                    </div>
+
                     <button
-                      className="start-test-btn"
-                      style={{ background: "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)" }}
-                      onClick={() => handleStartCategory(cat.name)}
+                      className="topic-start-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartCategory(cat.name);
+                      }}
                     >
+                      <FaPlayCircle className="start-icon" />
                       Testni Boshlash
-                      <span className="btn-arrow">
-                        <FaArrowRight />
-                      </span>
+                      <FaArrowRight className="arrow-icon" />
                     </button>
                   </div>
-
-                  <div className="card-glow"></div>
                 </div>
-              ))
-            ) : (
-              // Fallback to traditional difficulty cards if no specific categories exist
-              [
-                { key: "easy", name: "Oson Testlar", icon: <FaSmile />, color: "var(--gradient-accent)" },
-                { key: "medium", name: "O'rtacha Testlar", icon: <FaMeh />, color: "var(--gradient-primary)" },
-                { key: "hard", name: "Qiyin Testlar", icon: <FaFrown />, color: "var(--gradient-secondary)" },
-              ].map((diff, index) => {
-                const count = (tests[diff.key] || []).filter((t) => t.isActive !== false).length;
-                return (
-                  <div
-                    key={diff.key}
-                    className="difficulty-card animate-bounce-in"
-                    style={{ animationDelay: `${index * 0.2}s` }}
-                  >
-                    <div className="card-header-selection">
-                      <div className="difficulty-icon" style={{ background: diff.color }}>
-                        {diff.icon}
-                      </div>
-                      <h3 className="difficulty-name">{diff.name}</h3>
-                    </div>
+              ))}
+            </div>
+          )}
 
-                    <div className="card-content">
-                      <div className="test-count">
-                        <span className="count-number">{count}</span>
-                        <span className="count-label">ta test</span>
-                      </div>
-
-                      <div className="difficulty-description">
-                        Barcha yoqilgan savollar to'plami
-                      </div>
-                    </div>
-
-                    <div className="card-footer">
-                      <button
-                        className="start-test-btn"
-                        style={{ background: diff.color }}
-                        onClick={() => {
-                          const started = startTest(diff.key);
-                          if (started) {
-                            navigate(`/test/${diff.key}`);
-                          } else {
-                            alert("Bu bo'limda faol testlar mavjud emas!");
-                          }
-                        }}
-                      >
-                        Testni Boshlash
-                        <span className="btn-arrow">
-                          <FaArrowRight />
-                        </span>
-                      </button>
-                    </div>
-
-                    <div className="card-glow"></div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
+          {/* No tests message */}
           {!isLoadingTests &&
             categories.length === 0 &&
             Object.values(tests).every((difficulty) => difficulty.length === 0) && (

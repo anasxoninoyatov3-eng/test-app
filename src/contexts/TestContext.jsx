@@ -24,6 +24,7 @@ export const useTest = () => {
 
 export const TestProvider = ({ children }) => {
   const [tests, setTests] = useState({ easy: [], medium: [], hard: [] });
+  const [allTests, setAllTests] = useState([]);
   const [currentTest, setCurrentTest] = useState(null);
   const [testResults, setTestResults] = useState(null);
   const [isLoadingTests, setIsLoadingTests] = useState(true);
@@ -39,6 +40,7 @@ export const TestProvider = ({ children }) => {
       q,
       (snapshot) => {
         const grouped = { easy: [], medium: [], hard: [] };
+        const flatList = [];
         snapshot.docs.forEach((d) => {
           const data = { id: d.id, ...d.data() };
           const diff = ["easy", "medium", "hard"].includes(data.difficulty)
@@ -51,8 +53,10 @@ export const TestProvider = ({ children }) => {
           }
 
           grouped[diff].push(data);
+          flatList.push(data);
         });
         setTests(grouped);
+        setAllTests(flatList);
         setFirestoreError(null);
         setIsLoadingTests(false);
       },
@@ -74,6 +78,8 @@ export const TestProvider = ({ children }) => {
 
     const payload = hasOptionsArray
       ? {
+          testName: test.testName || "Umumiy Test",
+          imageUrl: test.imageUrl || "",
           question: test.question,
           options: test.options.map((o) => ({
             id: o.id || Math.random().toString(36).slice(2),
@@ -83,17 +89,19 @@ export const TestProvider = ({ children }) => {
           correctAnswer:
             test.correctAnswer ||
             (test.options.find((o) => o.isCorrect)?.text ?? ""),
-          difficulty: test.difficulty || "easy",
+          difficulty: "easy",
           isActive: true,
           createdAt: serverTimestamp(),
         }
       : {
+          testName: test.testName || "Umumiy Test",
+          imageUrl: test.imageUrl || "",
           question: test.question,
           optionA: test.optionA,
           optionB: test.optionB,
           optionC: test.optionC,
           correctAnswer: test.correctAnswer,
-          difficulty: test.difficulty || "easy",
+          difficulty: "easy",
           isActive: true,
           createdAt: serverTimestamp(),
         };
@@ -312,6 +320,7 @@ export const TestProvider = ({ children }) => {
 
   const value = {
     tests,
+    allTests,
     addTest,
     editTest,
     deleteTest,

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTest } from "../contexts/TestContext";
 import { useTheme } from "../contexts/ThemeContext";
-import { FaClock, FaFrown, FaMeh, FaMoon, FaSmile, FaSun } from "react-icons/fa";
+import { FaClock, FaBookOpen, FaMoon, FaSun } from "react-icons/fa";
 import "../styles/TestPage.css";
 
 const TestPage = () => {
@@ -187,21 +187,8 @@ const TestPage = () => {
               Savol #{currentTest.currentQuestionIndex + 1}
             </h2>
             <div className="difficulty-badge">
-              {difficulty === "easy" && (
-                <>
-                  <FaSmile /> Oson
-                </>
-              )}
-              {difficulty === "medium" && (
-                <>
-                  <FaMeh /> O'rtacha
-                </>
-              )}
-              {difficulty === "hard" && (
-                <>
-                  <FaFrown /> Qiyin
-                </>
-              )}
+              <FaBookOpen />
+              <span>{decodeURIComponent(difficulty)}</span>
             </div>
           </div>
 

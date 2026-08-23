@@ -42,7 +42,6 @@ const AdminPanel = () => {
       { id: Math.random().toString(36).slice(2), text: "", isCorrect: false },
       { id: Math.random().toString(36).slice(2), text: "", isCorrect: false },
     ],
-    difficulty: "easy",
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -218,7 +217,7 @@ const AdminPanel = () => {
 
       setMessage("Test muvaffaqiyatli qo'shildi!");
 
-      // Reset form
+      // Reset form - keep testName so admin can add more questions to same topic
       setFormData({
         testName: formData.testName || "Matematika 1-Boshqich",
         imageUrl: "",
@@ -235,7 +234,6 @@ const AdminPanel = () => {
             isCorrect: false,
           },
         ],
-        difficulty: "easy",
       });
 
       // Clear message after 3 seconds
@@ -341,7 +339,6 @@ const AdminPanel = () => {
             isCorrect: false,
           },
         ],
-        difficulty: "easy",
       });
       setEditingTest(null);
 
@@ -361,7 +358,6 @@ const AdminPanel = () => {
         { id: Math.random().toString(36).slice(2), text: "", isCorrect: false },
         { id: Math.random().toString(36).slice(2), text: "", isCorrect: false },
       ],
-      difficulty: "easy",
     });
   };
 
@@ -580,7 +576,7 @@ const AdminPanel = () => {
                 >
                   <label htmlFor="testName">
                     <FiBookOpen className="label-icon" />
-                    Test Nomi (Fan / Mavzu)
+                    Mavzu / Fan Nomi
                   </label>
                   <div className="input-wrapper">
                     <input
@@ -594,6 +590,10 @@ const AdminPanel = () => {
                       className="option-input"
                       style={{ width: "100%", padding: "1.2rem 1.5rem", borderRadius: "16px", fontSize: "1.05rem" }}
                     />
+                  </div>
+                  <div style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "6px", fontSize: "0.85rem", color: "#10b981", fontWeight: "600" }}>
+                    <FiTarget style={{ fontSize: "0.9rem" }} />
+                    <span>Bir mavzuга bir nechta savol qo'shish uchun mavzu nomini o'zgartirmang!</span>
                   </div>
                 </motion.div>
 
@@ -842,45 +842,7 @@ const AdminPanel = () => {
                   </div>
                 </motion.div>
 
-                {/* Difficulty Selection */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 0.5 }}
-                >
-                  <div className="form-group difficulty-group">
-                    <label htmlFor="difficulty">
-                      <FiZap className="label-icon" />
-                      Test Darajasi
-                    </label>
-                    <div className="difficulty-options">
-                      {["easy", "medium", "hard"].map((diff) => (
-                        <motion.button
-                          key={diff}
-                          type="button"
-                          className={`difficulty-option ${
-                            formData.difficulty === diff ? "active" : ""
-                          }`}
-                          onClick={() =>
-                            setFormData((prev) => ({
-                              ...prev,
-                              difficulty: diff,
-                            }))
-                          }
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                        >
-                          {getDifficultyIcon(diff)}
-                          <span>
-                            {diff === "easy" && "Oson"}
-                            {diff === "medium" && "O'rtacha"}
-                            {diff === "hard" && "Qiyin"}
-                          </span>
-                        </motion.button>
-                      ))}
-                    </div>
-                  </div>
-                </motion.div>
+
 
                 {/* Message Display */}
                 <AnimatePresence>
@@ -1026,36 +988,42 @@ const AdminPanel = () => {
                           />
                           <p>Yuklanmoqda...</p>
                         </div>
-                      ) : (
-                        Object.entries(tests).map(
-                          ([difficulty, difficultyTests]) => (
+                      ) : (() => {
+                          // Group tests by testName (topic)
+                          const allTestsList = Object.values(tests).flat();
+                          const topicMap = {};
+                          allTestsList.forEach((t) => {
+                            const name = t.testName || "Umumiy Test";
+                            if (!topicMap[name]) topicMap[name] = [];
+                            topicMap[name].push(t);
+                          });
+                          const topicEntries = Object.entries(topicMap);
+                          if (topicEntries.length === 0) {
+                            return (
+                              <div className="no-tests">
+                                <FiBookOpen className="no-tests-icon" />
+                                <p>Hali testlar qo'shilmagan</p>
+                              </div>
+                            );
+                          }
+                          return topicEntries.map(([topicName, topicTests]) => (
                             <motion.div
-                              key={difficulty}
+                              key={topicName}
                               className="difficulty-section"
                               initial={{ opacity: 0, y: 20 }}
                               animate={{ opacity: 1, y: 0 }}
                               transition={{ duration: 0.5 }}
                             >
                               <h4 className="difficulty-title">
-                                {getDifficultyIcon(difficulty)}
-                                <span>
-                                  {difficulty === "easy" && "Oson"}
-                                  {difficulty ===  "medium" && "O'rtacha"}
-                                  {difficulty === "hard" && "Qiyin"}
-                                </span>
+                                <FiBookOpen className="difficulty-icon easy" />
+                                <span>{topicName}</span>
                                 <span className="test-count">
-                                  ({difficultyTests.length} ta)
+                                  ({topicTests.length} ta savol)
                                 </span>
                               </h4>
 
-                              {difficultyTests.length === 0 ? (
-                                <div className="no-tests">
-                                  <FiBookOpen className="no-tests-icon" />
-                                  <p>Bu darajada testlar mavjud emas</p>
-                                </div>
-                              ) : (
-                                <div className="tests-grid">
-                                  {difficultyTests.map((test, index) => (
+                              <div className="tests-grid">
+                                  {topicTests.map((test, index) => (
                                     <motion.div
                                       key={test.id}
                                       className="test-card"
@@ -1171,11 +1139,9 @@ const AdminPanel = () => {
                                     </motion.div>
                                   ))}
                                 </div>
-                              )}
                             </motion.div>
-                          )
-                        )
-                      )}
+                          ));
+                        })()}
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -1205,73 +1171,79 @@ const AdminPanel = () => {
                 <p>Test tizimi haqida umumiy ma'lumotlar</p>
               </div>
 
-              <div className="stats-grid">
-                <motion.div
-                  className="stat-card"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.1 }}
-                  whileHover={{ y: -5, scale: 1.02 }}
-                >
-                  <div className="stat-icon">
-                    <FiBookOpen />
-                  </div>
-                  <div className="stat-content">
-                    <h3>Jami Testlar</h3>
-                    <p className="stat-number">
-                      {Object.values(tests).flat().length}
-                    </p>
-                  </div>
-                </motion.div>
+              {(() => {
+                const allTestsList = Object.values(tests).flat();
+                const topicSet = new Set(allTestsList.map(t => t.testName || "Umumiy Test"));
+                const activeCount = allTestsList.filter(t => t.isActive !== false).length;
+                const inactiveCount = allTestsList.filter(t => t.isActive === false).length;
+                return (
+                  <div className="stats-grid">
+                    <motion.div
+                      className="stat-card"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.5, delay: 0.1 }}
+                      whileHover={{ y: -5, scale: 1.02 }}
+                    >
+                      <div className="stat-icon">
+                        <FiBookOpen />
+                      </div>
+                      <div className="stat-content">
+                        <h3>Jami Savollar</h3>
+                        <p className="stat-number">{allTestsList.length}</p>
+                      </div>
+                    </motion.div>
 
-                <motion.div
-                  className="stat-card"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.2 }}
-                  whileHover={{ y: -5, scale: 1.02 }}
-                >
-                  <div className="stat-icon">
-                    <FiStar />
-                  </div>
-                  <div className="stat-content">
-                    <h3>Oson Testlar</h3>
-                    <p className="stat-number">{tests.easy?.length || 0}</p>
-                  </div>
-                </motion.div>
+                    <motion.div
+                      className="stat-card"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.5, delay: 0.2 }}
+                      whileHover={{ y: -5, scale: 1.02 }}
+                    >
+                      <div className="stat-icon">
+                        <FiStar />
+                      </div>
+                      <div className="stat-content">
+                        <h3>Jami Mavzular</h3>
+                        <p className="stat-number">{topicSet.size}</p>
+                      </div>
+                    </motion.div>
 
-                <motion.div
-                  className="stat-card"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.3 }}
-                  whileHover={{ y: -5, scale: 1.02 }}
-                >
-                  <div className="stat-icon">
-                    <FiTarget />
-                  </div>
-                  <div className="stat-content">
-                    <h3>O'rtacha Testlar</h3>
-                    <p className="stat-number">{tests.medium?.length || 0}</p>
-                  </div>
-                </motion.div>
+                    <motion.div
+                      className="stat-card"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.5, delay: 0.3 }}
+                      whileHover={{ y: -5, scale: 1.02 }}
+                    >
+                      <div className="stat-icon">
+                        <FiCheckCircle />
+                      </div>
+                      <div className="stat-content">
+                        <h3>Faol Savollar</h3>
+                        <p className="stat-number">{activeCount}</p>
+                      </div>
+                    </motion.div>
 
-                <motion.div
-                  className="stat-card"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.4 }}
-                  whileHover={{ y: -5, scale: 1.02 }}
-                >
-                  <div className="stat-icon">
-                    <FiZap />
+                    <motion.div
+                      className="stat-card"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.5, delay: 0.4 }}
+                      whileHover={{ y: -5, scale: 1.02 }}
+                    >
+                      <div className="stat-icon">
+                        <FiXCircle />
+                      </div>
+                      <div className="stat-content">
+                        <h3>Yashirilgan Savollar</h3>
+                        <p className="stat-number">{inactiveCount}</p>
+                      </div>
+                    </motion.div>
                   </div>
-                  <div className="stat-content">
-                    <h3>Qiyin Testlar</h3>
-                    <p className="stat-number">{tests.hard?.length || 0}</p>
-                  </div>
-                </motion.div>
-              </div>
+                );
+              })()}
             </motion.div>
           )}
         </AnimatePresence>
