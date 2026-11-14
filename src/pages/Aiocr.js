@@ -87,4 +87,8 @@ export async function extractQuestionFromImage(imageUrl) {
     options,
     correctIndex: idx !== null && idx >= 0 && idx < options.length ? idx : null,
   };
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 8ce8ad3 (Create a anticheat)

@@ -32,7 +32,11 @@ import {
   FiAlertTriangle,
 } from "react-icons/fi";
 import { motion, AnimatePresence } from "framer-motion";
+<<<<<<< HEAD
 import { extractQuestionFromImage } from "./aiOcr";
+=======
+import { extractQuestionFromImage } from "./Aiocr";
+>>>>>>> 8ce8ad3 (Create a anticheat)
 import CheatingReports, { useActiveCheatingCount } from "./CheatingReports";
 import "../styles/AdminPanel.css";
 

@@ -114,4 +114,8 @@ export const useAntiCheat = ({ enabled, onViolation }) => {
       doneRef.current = true;
     },
   };
+<<<<<<< HEAD
 };
+=======
+};
+>>>>>>> 8ce8ad3 (Create a anticheat)

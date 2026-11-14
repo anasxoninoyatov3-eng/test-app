@@ -11,7 +11,11 @@ import {
   enterFullscreen,
   exitFullscreen,
   isFullscreenSupported,
+<<<<<<< HEAD
 } from "./useAntiCheat";
+=======
+} from "./Useanticheat";
+>>>>>>> 8ce8ad3 (Create a anticheat)
 import "../styles/TestPage.css";
 
 const QUESTION_SECONDS = 30;
