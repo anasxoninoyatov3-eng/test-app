@@ -29,8 +29,11 @@ import {
   FiUserCheck,
   FiClock,
   FiUser,
+  FiAlertTriangle,
 } from "react-icons/fi";
 import { motion, AnimatePresence } from "framer-motion";
+import { extractQuestionFromImage } from "./aiOcr";
+import CheatingReports, { useActiveCheatingCount } from "./CheatingReports";
 import "../styles/AdminPanel.css";
 
 const AdminPanel = () => {
@@ -51,6 +54,7 @@ const AdminPanel = () => {
   } = useTest();
   const { theme, toggleTheme } = useTheme();
   const { logout } = useAuth();
+  const cheatingCount = useActiveCheatingCount();
   const [selectedAuditResult, setSelectedAuditResult] = useState(null);
 
   const [formData, setFormData] = useState({
@@ -113,11 +117,48 @@ const AdminPanel = () => {
       alert("Iltimos, faqat rasm faylini tanlang!");
       return;
     }
+    // Firestore hujjati 1MB bilan cheklangan: rasmni kichraytirib saqlaymiz
     const reader = new FileReader();
     reader.onload = (event) => {
-      setFormData((prev) => ({ ...prev, imageUrl: event.target.result }));
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1280;
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        setFormData((prev) => ({ ...prev, imageUrl: canvas.toDataURL("image/jpeg", 0.8) }));
+      };
+      img.onerror = () => alert("Rasmni o'qib bo'lmadi!");
+      img.src = event.target.result;
     };
     reader.readAsDataURL(file);
+  };
+
+  const [isOcrLoading, setIsOcrLoading] = useState(false);
+
+  const handleAiExtract = async () => {
+    if (!formData.imageUrl) return;
+    setIsOcrLoading(true);
+    setMessage("");
+    try {
+      const r = await extractQuestionFromImage(formData.imageUrl);
+      const opts = r.options.map((t, i) => ({
+        id: Math.random().toString(36).slice(2),
+        text: t,
+        isCorrect: r.correctIndex === i,
+      }));
+      while (opts.length < 2) {
+        opts.push({ id: Math.random().toString(36).slice(2), text: "", isCorrect: false });
+      }
+      setFormData((prev) => ({ ...prev, question: r.question, options: opts }));
+      setMessage("AI matnni o'qidi. Iltimos, tekshirib chiqing va to'g'ri javobni belgilang!");
+    } catch (err) {
+      setMessage("AI xatosi: " + err.message);
+    } finally {
+      setIsOcrLoading(false);
+    }
   };
   const [message, setMessage] = useState("");
   const [editingTest, setEditingTest] = useState(null);
@@ -638,6 +679,30 @@ const AdminPanel = () => {
             <FiBarChart className="tab-icon" />
             Statistika
           </motion.button>
+          <motion.button
+            className={`tab-btn ${activeTab === "cheating" ? "active" : ""}`}
+            onClick={() => setActiveTab("cheating")}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <FiAlertTriangle className="tab-icon" />
+            Firibgarlik
+            {cheatingCount > 0 && (
+              <span
+                style={{
+                  marginLeft: 6,
+                  background: "#ef4444",
+                  color: "white",
+                  borderRadius: 20,
+                  padding: "1px 8px",
+                  fontSize: "0.75rem",
+                  fontWeight: 700,
+                }}
+              >
+                {cheatingCount}
+              </span>
+            )}
+          </motion.button>
         </motion.div>
 
         {/* Create Test Tab */}
@@ -813,6 +878,25 @@ const AdminPanel = () => {
                           }}
                         >
                           🗑️ Rasmni O'chirish
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleAiExtract}
+                          disabled={isOcrLoading}
+                          style={{
+                            marginLeft: "8px",
+                            padding: "6px 14px",
+                            borderRadius: "8px",
+                            background: "linear-gradient(135deg, #8b5cf6, #6366f1)",
+                            color: "white",
+                            border: "none",
+                            fontWeight: "600",
+                            cursor: isOcrLoading ? "wait" : "pointer",
+                            fontSize: "0.85rem",
+                            opacity: isOcrLoading ? 0.7 : 1,
+                          }}
+                        >
+                          {isOcrLoading ? "⏳ AI o'qiyapti..." : "🤖 AI bilan matnga aylantirish"}
                         </button>
                       </div>
                     </div>
@@ -1290,6 +1374,9 @@ const AdminPanel = () => {
               )}
             </motion.div>
           )}
+
+          {/* Cheating Reports Tab */}
+          {activeTab === "cheating" && <CheatingReports key="cheating" />}
 
           {/* Statistics Tab */}
           {activeTab === "stats" && (
