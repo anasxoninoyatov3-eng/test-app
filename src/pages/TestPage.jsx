@@ -1,9 +1,54 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { collection, addDoc, getDocs, query, where } from "firebase/firestore";
+import { db } from "../services/firebase";
 import { useTest } from "../contexts/TestContext";
 import { useTheme } from "../contexts/ThemeContext";
-import { FaClock, FaBookOpen, FaMoon, FaSun } from "react-icons/fa";
+import { useAuth } from "../contexts/AuthContext";
+import { FaClock, FaBookOpen, FaMoon, FaSun, FaLock, FaExpand } from "react-icons/fa";
+import {
+  useAntiCheat,
+  enterFullscreen,
+  exitFullscreen,
+  isFullscreenSupported,
+} from "./useAntiCheat";
 import "../styles/TestPage.css";
+
+const QUESTION_SECONDS = 30;
+
+const safeDecode = (s) => {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+};
+
+const centerCard = {
+  maxWidth: 520,
+  margin: "12vh auto 0",
+  padding: "2.5rem 2rem",
+  textAlign: "center",
+  borderRadius: 24,
+  background: "rgba(24, 24, 36, 0.92)",
+  color: "white",
+  border: "1px solid rgba(255,255,255,0.15)",
+  boxShadow: "0 25px 50px -12px rgba(0,0,0,0.6)",
+  position: "relative",
+  zIndex: 2,
+};
+
+const bigBtn = (bg) => ({
+  marginTop: "1.5rem",
+  padding: "14px 28px",
+  borderRadius: 14,
+  border: "none",
+  background: bg,
+  color: "white",
+  fontWeight: 700,
+  fontSize: "1rem",
+  cursor: "pointer",
+});
 
 const TestPage = () => {
   const { difficulty } = useParams();
@@ -14,16 +59,69 @@ const TestPage = () => {
     finishTest,
     startTest,
     setCurrentTest,
+    resetTest,
     isLoadingTests,
   } = useTest();
   const { theme, toggleTheme } = useTheme();
+  const { currentUser } = useAuth();
+
+  const topicName = safeDecode(difficulty);
+  const uid = currentUser?.uid || "";
+  const lockKey = `test_lock_${uid || "anon"}_${topicName}`;
 
   const [selectedAnswer, setSelectedAnswer] = useState(null);
   const [showAnswer, setShowAnswer] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(QUESTION_SECONDS);
 
+  const [started, setStarted] = useState(false); // fullscreen'da boshlandimi
+  const [fsError, setFsError] = useState("");
+  const [locked, setLocked] = useState(null); // { reason } | null
+  const [checkingLock, setCheckingLock] = useState(true);
+
+  const startedAtRef = useRef(0);
+  const testRef = useRef(null);
+  const selectedRef = useRef(null);
+  testRef.current = currentTest;
+  selectedRef.current = selectedAnswer;
+
+  // ---------- Avvalgi blokni tekshirish (sahifani yangilab aylanib o'tmasligi uchun) ----------
   useEffect(() => {
-    // Wait for tests to load from Firestore before starting
+    let cancelled = false;
+    (async () => {
+      const localLocked = !!localStorage.getItem(lockKey);
+      let isLocked = localLocked;
+      try {
+        if (uid) {
+          const snap = await getDocs(
+            query(collection(db, "cheatingReports"), where("uid", "==", uid))
+          );
+          const mine = snap.docs
+            .map((d) => d.data())
+            .filter((r) => r.topicName === topicName);
+          if (mine.length > 0) {
+            // Bazadagi holat ustun: admin ruxsat bergan bo'lsa blok olinadi
+            isLocked = mine.some((r) => !r.unlocked);
+            if (isLocked) localStorage.setItem(lockKey, "1");
+            else localStorage.removeItem(lockKey);
+          }
+        }
+      } catch (err) {
+        console.warn("Blok holatini tekshirib bo'lmadi:", err);
+      }
+      if (!cancelled) {
+        if (isLocked) {
+          setLocked({ reason: "Avvalgi urinishda qoidabuzarlik aniqlangan" });
+        }
+        setCheckingLock(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [lockKey, uid, topicName]);
+
+  // ---------- Testni yuklash ----------
+  useEffect(() => {
     if (isLoadingTests) return;
     if (!currentTest) {
       const testStarted = startTest(difficulty);
@@ -34,29 +132,127 @@ const TestPage = () => {
     }
   }, [difficulty, startTest, navigate, isLoadingTests, currentTest]);
 
-  useEffect(() => {
-    if (currentTest && currentTest.currentQuestionIndex === 0) {
-      // Set timer for each question (30 seconds)
-      setTimeLeft(30);
-    }
-  }, [currentTest]);
+  // ---------- Firibgarlik: bloklash va adminga yuborish ----------
+  const handleViolation = async (reason) => {
+    const t = testRef.current;
+    const answers = t?.answers || [];
+    const correctCount = answers.filter(
+      (a, i) => t?.questions?.[i] && a === t.questions[i].correctAnswer
+    ).length;
 
-  useEffect(() => {
-    if (timeLeft <= 0) return;
+    setLocked({ reason });
+    localStorage.setItem(lockKey, "1");
+    exitFullscreen();
 
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          // Time's up, auto-submit
-          handleSubmitAnswer(selectedAnswer || "");
-          return 0;
-        }
-        return prev - 1;
+    const studentName =
+      [currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(" ") ||
+      currentUser?.username ||
+      "Noma'lum o'quvchi";
+
+    try {
+      await addDoc(collection(db, "cheatingReports"), {
+        uid,
+        studentName,
+        studentEmail: currentUser?.email || "",
+        topicName,
+        reason,
+        solvedCount: answers.length,
+        correctCount,
+        totalQuestions: t?.questions?.length || 0,
+        currentQuestionNumber: (t?.currentQuestionIndex ?? 0) + 1,
+        timeSpentMs: startedAtRef.current ? Date.now() - startedAtRef.current : 0,
+        createdAtMs: Date.now(),
+        createdDateStr: new Date().toLocaleString("uz-UZ"),
+        unlocked: false,
       });
-    }, 1000);
+    } catch (err) {
+      console.error("Firibgarlik hisobotini yuborib bo'lmadi:", err);
+    }
+  };
 
-    return () => clearInterval(timer);
-  }, [timeLeft, selectedAnswer]);
+  const { disarm } = useAntiCheat({
+    enabled: started && !locked,
+    onViolation: handleViolation,
+  });
+
+  // Sahifadan chiqib ketsa fullscreen'dan ham chiqamiz
+  useEffect(() => {
+    return () => {
+      exitFullscreen();
+    };
+  }, []);
+
+  const handleStartFullscreen = async () => {
+    setFsError("");
+    if (!isFullscreenSupported()) {
+      setFsError(
+        "Bu qurilma/brauzer to'liq ekran rejimini qo'llab-quvvatlamaydi. Kompyuterda Chrome, Edge yoki Firefox'dan foydalaning."
+      );
+      return;
+    }
+    try {
+      await enterFullscreen();
+      startedAtRef.current = Date.now();
+      setTimeLeft(QUESTION_SECONDS);
+      setStarted(true);
+    } catch (err) {
+      setFsError("To'liq ekranga o'tib bo'lmadi. Qaytadan urinib ko'ring.");
+    }
+  };
+
+  // ---------- Taymer ----------
+  useEffect(() => {
+    if (!started || locked || showAnswer || !currentTest) return;
+    const id = setInterval(() => setTimeLeft((p) => p - 1), 1000);
+    return () => clearInterval(id);
+  }, [started, locked, showAnswer, !!currentTest]);
+
+  useEffect(() => {
+    if (started && !locked && !showAnswer && currentTest && timeLeft <= 0) {
+      // Vaqt tugadi: tanlangan javobni (bo'lmasa bo'sh) yuboramiz
+      submitAnswer(selectedRef.current || "");
+      setShowAnswer(true);
+    }
+  }, [timeLeft]);
+
+  // ---------- Ekranlar ----------
+  if (checkingLock) {
+    return (
+      <div className="test-page-container">
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Test yuklanmoqda...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (locked) {
+    return (
+      <div className="test-page-container">
+        <div style={centerCard}>
+          <div style={{ fontSize: "3rem", color: "#ef4444" }}>
+            <FaLock />
+          </div>
+          <h2 style={{ margin: "1rem 0 0.5rem" }}>Test bloklandi</h2>
+          <p style={{ opacity: 0.8, lineHeight: 1.5 }}>
+            Test paytida qoidabuzarlik aniqlandi va admin xabardor qilindi.
+            Testni davom ettirish uchun admin ruxsat berishi kerak.
+          </p>
+          <p style={{ opacity: 0.6, fontSize: "0.85rem" }}>Sabab: {locked.reason}</p>
+          <button
+            style={bigBtn("linear-gradient(135deg, #6366f1, #8b5cf6)")}
+            onClick={() => {
+              resetTest?.();
+              navigate("/");
+            }}
+          >
+            Bosh sahifaga qaytish
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentTest) {
     return (
@@ -64,6 +260,44 @@ const TestPage = () => {
         <div className="loading-container">
           <div className="loading-spinner"></div>
           <p>Test yuklanmoqda...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!started) {
+    return (
+      <div className="test-page-container">
+        <div style={centerCard}>
+          <div style={{ fontSize: "3rem", color: "#8b5cf6" }}>
+            <FaExpand />
+          </div>
+          <h2 style={{ margin: "1rem 0 0.5rem" }}>{topicName}</h2>
+          <p style={{ opacity: 0.8, lineHeight: 1.6, textAlign: "left" }}>
+            Test <strong>to'liq ekran</strong> rejimida o'tadi. Quyidagilar{" "}
+            <strong>qoidabuzarlik</strong> hisoblanadi va test darhol
+            bloklanib, admin xabardor qilinadi:
+          </p>
+          <ul style={{ textAlign: "left", opacity: 0.8, lineHeight: 1.7, paddingLeft: "1.2rem" }}>
+            <li>To'liq ekrandan chiqish (Esc, F11)</li>
+            <li>Boshqa oyna/tabga o'tish (Alt+Tab, Win tugmasi)</li>
+            <li>Ctrl+Shift kombinatsiyalari, F12</li>
+          </ul>
+          {fsError && <p style={{ color: "#f87171" }}>{fsError}</p>}
+          <button
+            style={bigBtn("linear-gradient(135deg, #10b981, #059669)")}
+            onClick={handleStartFullscreen}
+          >
+            To'liq ekranda boshlash
+          </button>
+          <div>
+            <button
+              style={{ ...bigBtn("transparent"), marginTop: "0.8rem", opacity: 0.7 }}
+              onClick={() => navigate("/test-selection")}
+            >
+              Orqaga
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -84,34 +318,32 @@ const TestPage = () => {
 
   const handleSubmitAnswer = (answer) => {
     if (!answer) return;
-
-    // Submit answer immediately when submit button is clicked
     submitAnswer(answer);
     setShowAnswer(true);
   };
 
   const handleNextQuestion = () => {
     if (isLastQuestion) {
-      // For the last question, just finish the test
-      // Answer is already submitted in handleSubmitAnswer
+      // Testni qasddan tugatyapmiz: avval nazoratni o'chiramiz, keyin fullscreen'dan chiqamiz
+      disarm();
       finishTest();
+      exitFullscreen();
       navigate("/result");
     } else {
-      // For other questions, just move to next
-      // Answer is already submitted in handleSubmitAnswer
       setCurrentTest((prev) => ({
         ...prev,
         currentQuestionIndex: prev.currentQuestionIndex + 1,
       }));
       setSelectedAnswer(null);
       setShowAnswer(false);
-      setTimeLeft(30);
+      setTimeLeft(QUESTION_SECONDS);
     }
   };
 
   const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
+    const s = Math.max(0, seconds);
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
@@ -188,7 +420,7 @@ const TestPage = () => {
             </h2>
             <div className="difficulty-badge">
               <FaBookOpen />
-              <span>{decodeURIComponent(difficulty)}</span>
+              <span>{topicName}</span>
             </div>
           </div>
 
